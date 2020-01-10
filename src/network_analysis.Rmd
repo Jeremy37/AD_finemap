@@ -1,0 +1,741 @@
+---
+title: "Network analysis of AD GWAS meta-analysis"
+output: html_document
+---
+
+## Introduction
+Our AD meta-analysis discovered 37 loci (3 borderline genome-wide significant). We annotated 36 genes as likely causal candidates genes across the loci. 2 loci had 2 selected genes each (PTK2B & CLU, APP & ADAMTS1), while 3 loci had no candidate gene selected (HLA, VKORC1/BCKDK, MIR142). These genes were given a ranking from 1 - 4 (1: confident causal gene, 2: good evidence gene, 3: some evidence, 4: nominated gene at new locus).
+
+We applied a network propagation method (pagerank) to all genes, using as input seeds the set of 36 genes. This was done once for each gene in the input set, so that we could assess whether the "left-out" candidate gene was nominated by the network built using the remaining genes. We also did network propagation using one of 4 further input sets: all selected genes; genes with evidence ranks 1 - 3; genes with evidence ranks 1 - 2; and genes with evidence rank 1. Here we explore the results.
+
+## PageRank vs Z-scored PageRank
+
+We first investigate the association between PageRank, degree, and the Z-score for each gene's PageRank in real vs. permuted data.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+library(tidyverse)
+library(annotables)
+options(stringsAsFactors = F)
+knitr::opts_chunk$set(fig.width=8.5, fig.height=5.2)
+
+ad_dir = "/Users/jeremys/work/opentargets/AD_finemap"
+#network.df = readr::read_csv(file.path(ad_dir, "network/ALZ_finalTable.csv"))
+network.df = readr::read_csv(file.path(ad_dir, "network/Zsco_node_all.csv"))
+input_genes.df = readr::read_tsv(file.path(ad_dir, "network/ALZ_input_genes.tsv"))
+#View(network.df %>% filter(Trait == ENSG))
+#View(network.df %>% filter(Trait == "Sco4"))
+network.df$in_input = network.df$padj > 0
+
+network.df1 = network.df %>% filter(Trait == "ENSG00000064687")
+
+p.degree = ggplot(network.df1, aes(x=log10(degree), y=log10(page.rank))) +
+  geom_point(alpha=0.3, mapping = aes(col=in_input, size=in_input, alpha=in_input)) + 
+  geom_smooth() +
+  scale_color_manual(values = c("FALSE"="black", "TRUE"="red")) +
+  scale_size_manual(values = c("FALSE"=1, "TRUE"=2)) +
+  scale_alpha_manual(values = c("FALSE"=0.2, "TRUE"=0.8)) +
+  theme_bw() + theme(legend.justification=c(1,0), legend.position=c(0.95,0.05)) +
+  theme(axis.title.x = element_blank(), axis.text.x = element_blank(), axis.title.y = element_blank(), axis.text.y = element_blank()) +
+  ggtitle("Node degree vs PageRank")
+p.degree.dens = ggplot(network.df1, aes(x=log10(degree))) +
+  geom_density() + theme_bw() +
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank()) + theme(plot.margin = unit(c(0, 0, 0, 0), "cm"), panel.background = element_blank(), plot.background = element_blank())
+p.pr.dens = ggplot(network.df1, aes(x=log10(page.rank))) +
+  geom_density() + theme_bw() + coord_flip() +
+  theme(axis.title.x = element_blank(), axis.text.x = element_blank())
+pdh = cowplot::plot_grid(plotlist = list(p.pr.dens, p.degree, NULL, NULL, NULL, p.degree.dens), ncol=2, nrow=3, rel_heights = c(5,-0.4,1), rel_widths = c(1,7), align="hv")
+print(pdh)
+
+p.degree.z = ggplot(network.df1, aes(x=log10(degree), y=Zsco.page.rank.node)) +
+  geom_point(mapping = aes(col=in_input, size=in_input, alpha=in_input)) + 
+  geom_smooth() +
+  scale_color_manual(values = c("FALSE"="black", "TRUE"="red")) +
+  scale_size_manual(values = c("FALSE"=1, "TRUE"=2)) +
+  scale_alpha_manual(values = c("FALSE"=0.2, "TRUE"=0.8)) +
+  theme_bw() + theme(legend.justification=c(1,0), legend.position=c(0.95,0.05)) +
+  theme(axis.title.x = element_blank(), axis.text.x = element_blank(), axis.title.y = element_blank(), axis.text.y = element_blank()) +
+  ggtitle("Node degree vs Z-scored PageRank") +
+  coord_cartesian(ylim=c(-5, 10)) + theme(plot.margin = unit(c(0.2, 0, 0, 0), "cm"))
+p.zpr.dens = ggplot(network.df1 %>% filter(Zsco.page.rank.node > -6, Zsco.page.rank.node < 12), aes(x=Zsco.page.rank.node)) +
+  geom_density() + theme_bw() + coord_flip(xlim=c(-5, 10)) +
+  theme(axis.title.x = element_blank(), axis.text.x = element_blank(), plot.title = element_blank()) +
+  theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
+pdhz = cowplot::plot_grid(plotlist = list(p.zpr.dens, p.degree.z, NULL, NULL, NULL, p.degree.dens), ncol=2, nrow=3, rel_heights = c(5,-0.4,1), rel_widths = c(1,7), align="hv")
+print(pdhz)
+
+```
+
+PageRank is strongly influenced by the degree of a node, but this is not the case for the Z-score of PageRank from permutations.
+
+Interestingly, it looks like there are some genes that we used as input but which don't get a high Z-score even when they are in the input. Let's plot the distribution of Z scores for each of our input genes from the 32 runs.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(network.df %>% filter(ENSG %in% input_genes.df$gene_id),
+       aes(x=gene, y=log10(page.rank), col=in_input, group=gene)) +
+  geom_jitter(alpha=0.6) + theme_bw(9) +
+  theme(axis.title.x = element_blank(), axis.text.x = element_blank()) +
+  facet_wrap(~ gene, scales = "free")
+```
+
+The page.rank distribution when the gene is in the input is completely different than when the gene isn't in the input.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(network.df %>% filter(ENSG %in% input_genes.df$gene_id),
+       aes(x=gene, y=Zsco.page.rank.node, col=in_input, group=gene)) +
+  geom_boxplot(outlier.shape = NA) + 
+  geom_jitter(alpha=0.6) + theme_bw(9) +
+  theme(axis.title.x = element_blank(), axis.text.x = element_blank()) +
+  facet_wrap(~ gene, scales = "free")
+```
+
+The Z-scored page rank (relative to permutations) is highly variable across runs. I speculate that this is because some of the permutations may include the same gene in the input, which would vastly increase the standard deviation and mean of the page.ranks for the gene across permutation runs.
+
+
+## PageRank distribution
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+
+# Remove rows that correspond to genes that weren't in the network at all, as
+# these runs didn't differ in their input (those genes being missing).
+#network.df = network.df %>% filter(!Trait %in% c("ENSG00000134463", "ENSG00000152128", "ENSG00000161929", "ENSG00000284353"))
+pr_quants = quantile(network.df$page.rank, probs=seq(0, 1, 0.01))
+
+# We need to be a bit clever about which page.rank values we choose for each gene.
+# There was 1 run per locus. We could take the mean across runs for each gene...
+# but the mean could be quite skewed by one high value. We can use the median. But
+# another thing to be careful of is that genes at a locus might interact with each other.
+# E.g. At TREM2, TREM1, TREML1, etc interact with TREM2. They will then have a very
+# high score in all the runs where TREM2 is included as input. We don't want to rank
+# them higher than TREM2 because of this... so for all genes at a given locus, we
+# should only use the run for that locus (i.e. where the selected gene isn't in the
+# input). For remaining genes we can take the median across runs.
+locus.500kb.df = readr::read_tsv(file.path(ad_dir, "genes/AD.loci.1Mb_window.gene_overlaps.tsv")) %>%
+  dplyr::rename(gene_id = geneID) %>%
+  mutate(gene_id = gsub("\\.[_|\\d]+", "", gene_id, perl=T))
+
+locus.input.df = locus.500kb.df %>% inner_join(input_genes.df %>% select(gene_id), by="gene_id") %>%
+  select(locus, input_trait_id = gene_id)
+locus.500kb.df2 = locus.500kb.df %>%
+  left_join(locus.input.df, by = "locus") %>%
+  filter(!duplicated(gene_id), !is.na(input_trait_id))
+# Fix PTK2B and APP loci... ugh
+locus.500kb.df2$input_trait_id[locus.500kb.df2$symbol == "PTK2B"] = "ENSG00000120899"
+locus.500kb.df2$input_trait_id[locus.500kb.df2$symbol == "APP"] = "ENSG00000142192"
+
+network.tmp.df = network.df %>%
+  left_join(locus.500kb.df2 %>% select(gene_id, input_trait_id), by = c("ENSG" = "gene_id"))
+network.locus.df = network.tmp.df %>%
+  filter(Trait == input_trait_id) %>%
+  select(-input_trait_id) %>%
+  mutate(page.rank.mean = page.rank,
+         Zsco.page.rank.node.mean = Zsco.page.rank.node) %>%
+  select(ENSG, padj, gene, page.rank, page.rank.mean, page.rank, degree, cluster.walktrap, Zsco.page.rank.node.mean, Zsco.page.rank.node, Selected.KS, in_input)
+
+network.sel.df = network.locus.df %>%
+  filter(ENSG %in% input_genes.df$gene_id)
+
+#network.nonsel = network.df %>% filter(Trait == "Sco4", !ENSG %in% network.sel$ENSG)
+#  filter(padj == 0, !ENSG %in% unique(network.locus.df$ENSG)) %>%
+network.nonsel = network.tmp.df %>% group_by(ENSG) %>%
+  filter(!ENSG %in% unique(network.locus.df$ENSG)) %>%
+  summarise(padj = max(padj), gene = dplyr::first(gene),
+            page.rank.mean = mean(page.rank),
+            page.rank = median(page.rank),
+            degree = dplyr::first(degree),
+            cluster.walktrap = NA,
+            Zsco.page.rank.node.mean = mean(Zsco.page.rank.node),
+            Zsco.page.rank.node = median(Zsco.page.rank.node),
+            Selected.KS = mean(Selected.KS),
+            in_input = any(in_input))
+
+network.df2 = bind_rows(network.locus.df, network.nonsel)
+network.df2$selected = network.df2$ENSG %in% input_genes.df$gene_id
+network.sel = network.df2 %>%
+  filter(selected)
+
+network.nonsel$group = "all"
+network.sel$group = "all"
+network.sel$selected = T
+p1 = ggplot(network.nonsel, aes(x=group, y=log10(page.rank))) + geom_boxplot() +
+  theme_bw(10) + theme(axis.text.x = element_blank(), axis.title.x = element_blank(), plot.title = element_text(size = 10)) +
+  geom_jitter(data=network.sel, mapping=aes(x=group, y=log10(page.rank), col=selected)) +
+  ggtitle("PageRank of sel. genes relative to all (log scale)", ) +
+  guides(colour = "none")
+
+p2 = ggplot(network.nonsel, aes(x=group, y=page.rank)) + geom_boxplot() +
+  theme_bw(10) + theme(axis.text.x = element_blank(), axis.title.x = element_blank(), plot.title = element_text(size = 10)) +
+  geom_jitter(data=network.sel, mapping=aes(x=group, y=page.rank, col=selected)) +
+  ggtitle("PageRank of sel. genes relative to all (linear scale)") +
+  guides(colour = "none")
+
+p3 = ggplot(network.nonsel, aes(x=group, y=page.rank)) + geom_boxplot() +
+  theme_bw(10) + theme(axis.text.x = element_blank(), axis.title.x = element_blank(), plot.title = element_text(size = 10)) +
+  geom_jitter(data=network.sel, mapping=aes(x=group, y=page.rank, col=selected)) +
+  ggtitle("PageRank of sel. genes relative to all (zoom)") +
+  coord_cartesian(ylim = c(0, 0.0005)) +
+  guides(colour = "none")
+
+p4x = ggplot(network.nonsel, aes(x=group, y=Zsco.page.rank.node)) + geom_boxplot() +
+  theme_bw(10) + theme(axis.text.x = element_blank(), axis.title.x = element_blank(), plot.title = element_text(size = 10)) +
+  geom_jitter(data=network.sel, mapping=aes(x=group, y=Zsco.page.rank.node, col=selected)) +
+  ggtitle("Z-scored PageRank of sel. genes relative to all") +
+  guides(colour = "none")
+
+p4 = ggplot(network.nonsel, aes(x=group, y=Zsco.page.rank.node)) + geom_boxplot() +
+  theme_bw(10) + theme(axis.text.x = element_blank(), axis.title.x = element_blank(), plot.title = element_text(size = 10)) +
+  geom_jitter(data=network.sel, mapping=aes(x=group, y=Zsco.page.rank.node, col=selected)) +
+  ggtitle("Z-scored PageRank of sel. genes rel. to all (zoom)") +
+  coord_cartesian(ylim = c(-1, 10)) +
+  guides(colour = "none")
+
+cowplot::plot_grid(plotlist = list(p1, p2, p3, p4), nrow=2, ncol=2)
+```
+
+Looking at the distribution of PageRank for our selected genes (when each is left out of the input) relative to all genes suggests that selected genes have higher PageRank. This difference becomes more striking when we use Z-scored page.rank for each gene relative to permutations.
+
+We can visualise the difference as a density histogram as well.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+p1 = ggplot(network.df2, aes(x=page.rank, fill=selected)) +
+  geom_density(alpha=0.7) +
+  theme_bw() +
+  scale_x_log10()
+
+p2 = ggplot(network.df2, aes(x=Zsco.page.rank.node, fill=selected)) +
+  geom_density(alpha=0.7) +
+  theme_bw() +
+  scale_x_log10()
+cowplot::plot_grid(plotlist = list(p1, p2), nrow=2, ncol=1)
+```
+
+Let's convert these pageRanks to quantiles of the distribution.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+getQuantilePR = function(x) {
+  sum(network.nonsel$page.rank < x) / sum(!is.na(network.nonsel$page.rank))
+}
+getQuantilePR_Z = function(x) {
+  sum(network.nonsel$Zsco.page.rank.node < x, na.rm=T) / sum(!is.na(network.nonsel$Zsco.page.rank.node))
+}
+
+network.sel$pr_quant = sapply(network.sel$page.rank, getQuantilePR)
+network.sel$prz_quant = sapply(network.sel$Zsco.page.rank.node, getQuantilePR_Z)
+p1 = ggplot(data.frame(quantile=network.sel$pr_quant), aes(x=quantile)) +
+  geom_histogram(bins = 10) + theme_bw(10) + theme(plot.title = element_text(size = 10)) +
+  xlab("PR quantile of selected genes") + ggtitle("PR quantile of selected genes") +
+  xlim(c(0,1))
+p2 = ggplot(data.frame(quantile=network.sel$prz_quant), aes(x=quantile)) +
+  geom_histogram(bins = 10) + theme_bw(10) + theme(plot.title = element_text(size = 10)) +
+  xlab("Z-scored PR quantile of selected genes") + ggtitle("Z-scored PR quantile of selected genes") +
+  xlim(c(0,1))
+
+p3 = ggplot(data.frame(diff=(network.sel$prz_quant - network.sel$pr_quant)), aes(x=diff)) +
+  geom_histogram(bins = 10) + theme_bw(10) + theme(plot.title = element_text(size = 10)) +
+  xlab("Change in quantile") + ggtitle("Differences in Z-PR quantile rel. to PR quantile")
+network.sel$quant_diff = network.sel$prz_quant - network.sel$pr_quant
+p4 = ggplot(network.sel, aes(x="diff", y=quant_diff)) +
+  geom_boxplot() + geom_jitter() + theme_bw(10) + theme(plot.title = element_text(size = 10)) +
+  xlab("Change in quantile") + ggtitle("Differences in Z-PR quantile rel. to PR quantile")
+
+cowplot::plot_grid(plotlist = list(p1, p2, p3, p4), nrow=2, ncol=2)
+```
+
+The histogram shows the quantile of the pageRank score for our selected genes. In general, it looks like our selected genes have a higher pageRank than other genes. This is also the case using the Z-scaled pageRank. The change in quantile when using Z-scaled pageRank vs. raw pageRank is minimal, although with the Z-scaled pageRank, more genes (30 of 32) have a pageRank quantile above the median, compared with (24 of 32) for raw pageRank.
+
+How many of our genes (out of 32), have page.rank above the median, or Z-scored page rank above the median?
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+print(sprintf("PageRank: %d", sum(network.sel$pr_quant > 0.5)))
+print(sprintf("Z-scored PageRank: %d", sum(network.sel$prz_quant > 0.5)))
+#sum(network.sel$prz_quant - network.sel$pr_quant)
+
+print(sprintf("Median selected gene pageRank: %g", median(network.sel$page.rank)))
+print(sprintf("Median other gene pageRank:    %g", median(network.nonsel$page.rank)))
+
+print(sprintf("Mean selected gene pageRank: %g", mean(network.sel$page.rank)))
+print(sprintf("Mean other gene pageRank:    %g", mean(network.nonsel$page.rank)))
+```
+
+Let's use a one-sided Wilcoxon rank sum test to see if the higher pageRank for selected genes is "significant".
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+#t.test(network.sel$page.rank, network.nonsel$page.rank, alternative = "greater")
+wilcox.test(network.sel$page.rank, network.nonsel$page.rank, alternative = "greater")
+
+```
+
+The difference for raw pageRank significant. The pageRank for selected genes is on average about 4x higher than that of other genes, whether mean or median is used.
+
+We can do the same for Z-scaled page.rank.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+print(sprintf("Median selected gene Z-scaled pageRank: %g", median(network.sel$Zsco.page.rank.node)))
+print(sprintf("Median other gene Z-scaled pageRank:    %g", median(network.nonsel$Zsco.page.rank.node, na.rm=T)))
+
+print(sprintf("Mean selected gene Z-scaled pageRank: %g", mean(network.sel$Zsco.page.rank.node)))
+print(sprintf("Mean other gene Z-scaled pageRank:    %g", mean(network.nonsel$Zsco.page.rank.node, na.rm=T)))
+
+#t.test(network.sel$Zsco.page.rank.node, network.nonsel$Zsco.page.rank.node, alternative = "greater")
+wilcox.test(network.sel$Zsco.page.rank.node, network.nonsel$Zsco.page.rank.node, alternative = "greater")
+```
+
+The difference is even stronger for Z-scaled page.rank.
+
+
+## Locus PageRanks
+
+Next, we look at the PageRanks of genes at each locus.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+# Read in a table of genes at each locus
+locus.500kb.df = locus.500kb.df %>% left_join(network.df2 %>% dplyr::rename(gene_id = ENSG), by="gene_id")
+
+locus.sel = locus.500kb.df %>% select(locus, gene, page.rank, Zsco.page.rank.node, selected) %>% filter(selected == T)
+locus.nonsel = locus.500kb.df %>% select(locus, gene, page.rank, Zsco.page.rank.node, selected) %>% filter(selected == F)
+ggplot(locus.nonsel, aes(x=locus, y=log10(page.rank), col=selected, size=selected)) +
+  geom_point(alpha=0.7) +
+  geom_point(data=locus.sel, alpha=0.8) +
+  theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("PageRank per locus (1 Mb window)") +
+  scale_size_manual(values=c("TRUE"=2.5, "FALSE"=1.5))
+
+
+locus.100kb.df = readr::read_tsv(file.path(ad_dir, "genes/AD.loci.200kb_window.gene_overlaps.tsv")) %>%
+  dplyr::rename(gene_id = geneID) %>%
+  mutate(gene_id = gsub("\\.[_|\\d]+", "", gene_id, perl=T))
+locus.100kb.df = locus.100kb.df %>% left_join(network.df2 %>% dplyr::rename(gene_id = ENSG), by="gene_id")
+
+locus.sel = locus.100kb.df %>% select(locus, gene, page.rank, Zsco.page.rank.node, selected) %>% filter(selected == T)
+locus.nonsel = locus.100kb.df %>% select(locus, gene, page.rank, Zsco.page.rank.node, selected) %>% filter(selected == F)
+ggplot(locus.nonsel, aes(x=locus, y=log10(page.rank), col=selected, size=selected)) +
+  geom_point(alpha=0.7) +
+  geom_point(data=locus.sel, alpha=0.8) +
+  theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("PageRank per locus (200 kb window)") +
+  scale_size_manual(values=c("TRUE"=2.5, "FALSE"=1.5))
+```
+
+The above plots show the pageRank relative to other genes within 500 kb or within 100 kb. We can look at this using Z-scaled PageRank as well.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+locus.sel = locus.500kb.df %>% select(locus, gene, page.rank, Zsco.page.rank.node, selected) %>% filter(selected == T)
+locus.nonsel = locus.500kb.df %>% select(locus, gene, page.rank, Zsco.page.rank.node, selected) %>% filter(selected == F)
+maxZ = locus.sel$Zsco.page.rank.node %>% max(na.rm=T)
+locus.nonsel = locus.nonsel %>% group_by(gene) %>%
+  mutate(Zsco.page.rank.node = min(Zsco.page.rank.node, maxZ+1))
+ggplot(locus.nonsel, aes(x=locus, y=Zsco.page.rank.node, col=selected, size=selected)) +
+  geom_point(alpha=0.7) +
+  geom_point(data=locus.sel, alpha=0.8) +
+  theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("Z-scaled PageRank per locus (1 Mb window)") +
+  scale_size_manual(values=c("TRUE"=2.5, "FALSE"=1.5))
+
+
+locus.sel = locus.100kb.df %>% select(locus, gene, page.rank, Zsco.page.rank.node, selected) %>% filter(selected == T)
+locus.nonsel = locus.100kb.df %>% select(locus, gene, page.rank, Zsco.page.rank.node, selected) %>% filter(selected == F)
+locus.nonsel = locus.nonsel %>% group_by(gene) %>%
+  mutate(Zsco.page.rank.node = min(Zsco.page.rank.node, maxZ+1))
+ggplot(locus.nonsel, aes(x=locus, y=Zsco.page.rank.node, col=selected, size=selected)) +
+  geom_point(alpha=0.7) +
+  geom_point(data=locus.sel, alpha=0.8) +
+  theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("Z-scaled PageRank per locus (200 kb window)") +
+  scale_size_manual(values=c("TRUE"=2.5, "FALSE"=1.5))
+```
+
+
+
+Let's also convert these to ranks / quantiles within each locus.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+vecQuantiles = function(x) {
+  sapply(x, function(val) if (is.na(val)) { NA } else { (sum(x <= val, na.rm = T) - 1) / (sum(!is.na(x)) - 1) })
+}
+# locus.adam10 = locus.500kb.df %>% filter(locus == "ADAM10") %>% select(locus, gene, page.rank, selected) %>% na.omit()
+# locus.adam10$gene
+# vecQuantiles(locus.adam10$page.rank)
+locus.500kb.ranks.df = locus.500kb.df %>%
+  select(locus, gene_id, gene, page.rank, Zsco.page.rank.node, selected) %>%
+  group_by(locus) %>%
+  mutate(pagerank.rank = rank(-page.rank, ties.method="average", na.last = T),
+         pagerank.locus_quantile = vecQuantiles(page.rank),
+         Zsco.pagerank.rank = rank(-Zsco.page.rank.node, ties.method="average", na.last = T),
+         Zsco.pagerank.locus_quantile = vecQuantiles(Zsco.page.rank.node))
+
+locus.sel = locus.500kb.ranks.df %>% select(locus, gene, pagerank.locus_quantile, selected) %>% filter(selected == T)
+locus.nonsel = locus.500kb.ranks.df %>% select(locus, gene, pagerank.locus_quantile, selected) %>% filter(selected == F)
+ggplot(locus.nonsel, aes(x=locus, y=pagerank.locus_quantile, col=selected, size=selected)) +
+  geom_point(alpha=0.7) +
+  geom_point(data=locus.sel, alpha=0.8) +
+  theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("PageRank quantile of genes per locus (1 Mb window)") +
+  scale_size_manual(values=c("TRUE"=2.5, "FALSE"=1.5))
+
+locus.sel = locus.500kb.ranks.df %>% select(locus, gene, Zsco.pagerank.locus_quantile, selected) %>% filter(selected == T)
+locus.nonsel = locus.500kb.ranks.df %>% select(locus, gene, Zsco.pagerank.locus_quantile, selected) %>% filter(selected == F)
+ggplot(locus.nonsel, aes(x=locus, y=Zsco.pagerank.locus_quantile, col=selected, size=selected)) +
+  geom_point(alpha=0.7) +
+  geom_point(data=locus.sel, alpha=0.8) +
+  theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("Z-scaled PageRank quantile of genes per locus (1 Mb window)") +
+  scale_size_manual(values=c("TRUE"=2.5, "FALSE"=1.5))
+
+```
+
+There is certainly an over-representation of genes at the top rank per locus, but apart from top-ranking genes it's not clear if the remaining genes have higher ranks on average.
+
+Let's do a simple statistical test again to check for significance of the difference for Page.Rank, using the 500 kb gene window. 
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+locus.sel = locus.500kb.ranks.df %>% select(locus, gene, pagerank.locus_quantile, selected) %>% filter(selected == T)
+locus.nonsel = locus.500kb.ranks.df %>% select(locus, gene, pagerank.locus_quantile, selected) %>% filter(selected == F)
+
+#t.test(locus.sel$pagerank.locus_quantile, locus.nonsel$pagerank.locus_quantile, alternative = "greater")
+wilcox.test(locus.sel$pagerank.locus_quantile, locus.nonsel$pagerank.locus_quantile, alternative = "greater")
+```
+
+The difference is significant, i.e. selected genes are ranked more highly at each locus on average.
+
+Do the same for Z-scaled Page.Rank.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+locus.sel = locus.500kb.ranks.df %>% select(locus, gene, Zsco.pagerank.locus_quantile, selected) %>% filter(selected == T)
+locus.nonsel = locus.500kb.ranks.df %>% select(locus, gene, Zsco.pagerank.locus_quantile, selected) %>% filter(selected == F)
+
+#t.test(locus.sel$Zsco.pagerank.locus_quantile, locus.nonsel$Zsco.pagerank.locus_quantile, alternative = "greater")
+wilcox.test(locus.sel$Zsco.pagerank.locus_quantile, locus.nonsel$Zsco.pagerank.locus_quantile, alternative = "greater")
+```
+
+
+Let's do the same, but considering a 100 kb gene window.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+locus.100kb.ranks.df = locus.100kb.df %>%
+  select(locus, gene, page.rank, Zsco.page.rank.node, selected) %>%
+  group_by(locus) %>%
+  mutate(pagerank.rank = rank(-page.rank, ties.method="average", na.last = T),
+         pagerank.locus_quantile = vecQuantiles(page.rank),
+         Zsco.pagerank.rank = rank(-Zsco.page.rank.node, ties.method="average", na.last = T),
+         Zsco.pagerank.locus_quantile = vecQuantiles(Zsco.page.rank.node))
+locus.sel = locus.100kb.ranks.df %>% select(locus, gene, pagerank.locus_quantile, selected) %>% filter(selected == T)
+locus.nonsel = locus.100kb.ranks.df %>% select(locus, gene, pagerank.locus_quantile, selected) %>% filter(selected == F)
+
+#t.test(locus.sel$pagerank.locus_quantile, locus.nonsel$pagerank.locus_quantile, alternative = "greater")
+wilcox.test(locus.sel$pagerank.locus_quantile, locus.nonsel$pagerank.locus_quantile, alternative = "greater")
+
+locus.sel = locus.100kb.ranks.df %>% select(locus, gene, Zsco.pagerank.locus_quantile, selected) %>% filter(selected == T)
+locus.nonsel = locus.100kb.ranks.df %>% select(locus, gene, Zsco.pagerank.locus_quantile, selected) %>% filter(selected == F)
+
+#t.test(locus.sel$Zsco.pagerank.locus_quantile, locus.nonsel$Zsco.pagerank.locus_quantile, alternative = "greater")
+wilcox.test(locus.sel$Zsco.pagerank.locus_quantile, locus.nonsel$Zsco.pagerank.locus_quantile, alternative = "greater")
+```
+
+The test is again significant.
+
+## Network recommended genes
+
+Let's examine the genes that rank very highly but weren't in our input sets.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+#View(network.df2 %>% arrange(-selected, desc(page.rank)))
+print("Top genes by page.rank")
+print(network.df2 %>% dplyr::filter(!selected) %>% arrange(desc(page.rank)) %>% select(ENSG, gene, page.rank, Zsco.page.rank.node, Selected.KS) %>% .[1:20,])
+
+#View(network.df2 %>% arrange(-selected, desc(Zsco.page.rank.node)))
+print("Top genes by Z-scaled page.rank")
+print(network.df2 %>% dplyr::filter(!selected) %>% arrange(desc(Zsco.page.rank.node)) %>% select(ENSG, gene, page.rank, Zsco.page.rank.node, Selected.KS) %>% .[1:20,])
+
+#View(network.Sco4 %>% arrange(padj.KS, desc(selected)))
+
+# Get list of highly ranked genes to check if they are enriched for
+# sub-GWAS threshold significant SNPs.
+#View(grch37)
+grch37.nodup = grch37 %>% filter(!duplicated(ensgene))
+network.grch37 = network.df2 %>%
+  left_join(grch37.nodup %>% arrange(chr, start), by=c("ENSG"="ensgene"))
+network.grch37.excl_selected = network.grch37 %>% dplyr::filter(!selected)
+
+network.all = network.grch37 %>% select(chr, start, end, ENSG) %>%
+  arrange(chr, start) %>% na.omit() %>%
+  filter(!duplicated(ENSG))
+network.all.10kb = network.all %>% group_by(ENSG) %>% mutate(start = max(1, start - 10000), end = end + 10000)
+write.table(network.all, file = file.path(ad_dir, "network/ad_network.all.bed"), quote=F, sep="\t", col.names=F, row.names=F)
+write.table(network.all.10kb, file = file.path(ad_dir, "network/ad_network.all.10kb_window.bed"), quote=F, sep="\t", col.names=F, row.names=F)
+
+
+#network.df$in_input = network.df$ENSG %in% input_genes.df$gene_id
+#ggplot(network.df %>% filter(ENSG != Trait), aes(x=page.rank, fill=in_input)) + geom_density() + scale_x_log10() + theme_bw()
+
+#selected_clusters = network.Sco4 %>% filter(in_input) %>% .$cluster.walktrap
+#network.Sco4$input_gene_cluster = network.Sco4$cluster.walktrap %in% selected_clusters
+#View(network.Sco4 %>% arrange(desc(input_gene_cluster), cluster.walktrap, desc(in_input)))
+```
+
+After writing out some tables of top genes above, we overlap them with the AD GWAS meta-analysis using bedtools. We can then read in the SNPs near top ranked genes, and see whether the min p-value per gene is lower for high-ranking genes than for other genes.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+all_gene.snps = readr::read_tsv(file.path(ad_dir, "network/ad_network.all.10kb_window.snp_overlaps.tsv.gz"),
+                                   col_names = c("chr", "gene_start", "gene_end", "gene_id", "snp_chr", "pos", "snp_pos_end", "rsid", "meta_p")) %>%
+  select(-snp_chr, -snp_pos_end) %>%
+  filter(pos > 0, meta_p > 0)
+
+all_gene.minp = all_gene.snps %>%
+  group_by(gene_id) %>%
+  summarise(minp = min(meta_p),
+            num_snps = n())
+
+valid_chrs = as.character(1:22)
+network.grch37.minp = network.grch37 %>%
+  left_join(all_gene.minp, by = c("ENSG" = "gene_id")) %>%
+  filter(chr %in% valid_chrs)
+
+network.grch37.excl.minp = network.grch37.minp %>%
+  filter(!ENSG %in% locus.500kb.df$gene_id)
+
+top.pageRank.genes = network.grch37.minp %>% arrange(desc(page.rank)) %>% .$ENSG
+top.ZpageRank.genes = network.grch37.minp %>% arrange(desc(Zsco.page.rank.node)) %>% .$ENSG
+top.minp.genes = network.grch37.minp %>% arrange(minp) %>% .$ENSG
+
+network.grch37.minp = network.grch37.minp %>%
+  mutate(top100_pageRank = ENSG %in% top.pageRank.genes[1:100],
+         top500_pageRank = ENSG %in% top.pageRank.genes[1:500],
+         top1000_pageRank = ENSG %in% top.pageRank.genes[1:1000],
+         top100_ZpageRank = ENSG %in% top.ZpageRank.genes[1:100],
+         top500_ZpageRank = ENSG %in% top.ZpageRank.genes[1:500],
+         top1000_ZpageRank = ENSG %in% top.ZpageRank.genes[1:1000],
+         page.rank.quantile = vecQuantiles(page.rank),
+         Zsco.page.rank.quantile = vecQuantiles(Zsco.page.rank.node),
+         minp.quantile = vecQuantiles(-minp),
+         top100_minp = ENSG %in% top.minp.genes[1:100],
+         top500_minp = ENSG %in% top.minp.genes[1:500],
+         top1000_minp = ENSG %in% top.minp.genes[1:1000])
+
+top.pageRank.genes.excl = network.grch37.excl.minp %>% arrange(desc(page.rank)) %>% .$ENSG
+top.ZpageRank.genes.excl = network.grch37.excl.minp %>% arrange(desc(Zsco.page.rank.node)) %>% .$ENSG
+top.minp.genes.excl = network.grch37.excl.minp %>% arrange(minp) %>% .$ENSG
+
+network.grch37.excl.minp = network.grch37.excl.minp %>%
+  mutate(top100_pageRank = ENSG %in% top.pageRank.genes.excl[1:100],
+         top500_pageRank = ENSG %in% top.pageRank.genes.excl[1:500],
+         top1000_pageRank = ENSG %in% top.pageRank.genes.excl[1:1000],
+         top100_ZpageRank = ENSG %in% top.ZpageRank.genes.excl[1:100],
+         top500_ZpageRank = ENSG %in% top.ZpageRank.genes.excl[1:500],
+         top1000_ZpageRank = ENSG %in% top.ZpageRank.genes.excl[1:1000],
+         page.rank.quantile = vecQuantiles(page.rank),
+         Zsco.page.rank.quantile = vecQuantiles(Zsco.page.rank.node),
+         minp.quantile = vecQuantiles(-minp),
+         top100_minp = ENSG %in% top.minp.genes.excl[1:100],
+         top500_minp = ENSG %in% top.minp.genes.excl[1:500],
+         top1000_minp = ENSG %in% top.minp.genes.excl[1:1000])
+
+p1 = ggplot(network.grch37.excl.minp, aes(x=-log10(minp), fill=top100_pageRank)) +
+  geom_density(alpha=0.7) + theme_bw() +
+  ggtitle("Min p value SNP for top 100 genes by Page.Rank")
+p2 = ggplot(network.grch37.excl.minp, aes(x=-log10(minp), fill=top100_ZpageRank)) +
+  geom_density(alpha=0.7) + theme_bw() +
+  ggtitle("Min p value SNP for top 100 genes by Z-scaled Page.Rank")
+cowplot::plot_grid(plotlist = list(p1, p2), nrow=2, ncol=1)
+
+p1 = ggplot(network.grch37.excl.minp, aes(x=-log10(minp), fill=top500_pageRank)) +
+  geom_density(alpha=0.7) + theme_bw() +
+  ggtitle("Min p value SNP for top 500 genes by Page.Rank")
+p2 = ggplot(network.grch37.excl.minp, aes(x=-log10(minp), fill=top500_ZpageRank)) +
+  geom_density(alpha=0.7) + theme_bw() +
+  ggtitle("Min p value SNP for top 500 genes by Z-scaled Page.Rank")
+cowplot::plot_grid(plotlist = list(p1, p2), nrow=2, ncol=1)
+```
+
+#### Are p-values lower (in AD GWAS) near top 100 network genes?
+
+Test for whether p values are less for top 100 genes - by Page.Rank first, or Z-scaled Page.Rank second.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+wilcox.test(network.grch37.excl.minp %>% filter(top100_pageRank) %>% .$minp,
+            network.grch37.excl.minp %>% filter(!top100_pageRank) %>% .$minp,
+            alternative = "less")
+wilcox.test(network.grch37.excl.minp %>% filter(top100_ZpageRank) %>% .$minp,
+            network.grch37.excl.minp %>% filter(!top100_ZpageRank) %>% .$minp,
+            alternative = "less")
+```
+
+Min P values for top genes by page.rank do tend to be lower, and the effect is stronger for Z-scaled page.ranks.
+
+#### Are p-values lower (in AD GWAS) near top 500 network genes?
+
+Test for whether p values are less for top 500 genes - by Page.Rank first, or Z-scaled Page.Rank second
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+wilcox.test(network.grch37.excl.minp %>% filter(top500_pageRank) %>% .$minp,
+            network.grch37.excl.minp %>% filter(!top500_pageRank) %>% .$minp,
+            alternative = "less")
+wilcox.test(network.grch37.excl.minp %>% filter(top500_ZpageRank) %>% .$minp,
+            network.grch37.excl.minp %>% filter(!top500_ZpageRank) %>% .$minp,
+            alternative = "less")
+
+```
+
+Min P values for top genes by page.rank again tend to be lower, and the effect is stronger for Z-scaled page.ranks.
+
+#### Do genes with low p-value SNPs have higher page.rank?
+
+Let's look at the same thing in a different way. Do genes with low minp values for nearby SNPs tend to have higher page.rank or Z-scaled page.rank? We can look at the top 100 or 1000 genes by minp value, and compare their page.ranks to remaining genes.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+
+p1 = ggplot(network.grch37.excl.minp, aes(x=page.rank, fill=top100_minp)) +
+  geom_density(alpha=0.7) + theme_bw() + scale_x_log10() +
+  ggtitle("Page.rank for top 100 genes by min P-value within 10 kb")
+# ggplot(network.grch37.excl.minp, aes(x=Zsco.page.rank.node, fill=top100_minp)) +
+#   geom_density(alpha=0.7) + theme_bw() +
+#   ggtitle("Z-scaled Page.Rank for top 100 genes by min P-value within 10 kb") +
+#   coord_cartesian(xlim = c(-2, 50))
+p2 = ggplot(network.grch37.excl.minp %>% filter(Zsco.page.rank.node < 15), aes(x=Zsco.page.rank.node, fill=top100_minp)) +
+  geom_density(alpha=0.7) + theme_bw() +
+  ggtitle("Z-scaled Page.Rank for top 100 genes by min P-value within 10 kb (Zsco < 15)") +
+  coord_cartesian(xlim = c(-2, 15))
+cowplot::plot_grid(plotlist = list(p1, p2), nrow=2, ncol=1)
+
+p1 = ggplot(network.grch37.excl.minp, aes(x=page.rank.quantile, fill=top100_minp)) +
+  geom_density(alpha=0.7) + theme_bw() +
+  ggtitle("Page.Rank quantile for top 100 genes by min P-value within 10 kb")
+p2 = ggplot(network.grch37.excl.minp, aes(x=Zsco.page.rank.quantile, fill=top100_minp)) +
+  geom_density(alpha=0.7) + theme_bw() +
+  ggtitle("Z-scaled Page.Rank quantile for top 100 genes by min P-value within 10 kb")
+cowplot::plot_grid(plotlist = list(p1, p2), nrow=2, ncol=1)
+
+# ggplot(network.grch37.excl.minp, aes(x=page.rank, fill=top1000_minp)) +
+#   geom_density(alpha=0.7) + theme_bw() + scale_x_log10() +
+#   ggtitle("Page.rank for top 1000 genes by min P-value within 10 kb")
+# ggplot(network.grch37.excl.minp, aes(x=Zsco.page.rank.node, fill=top1000_minp)) +
+#   geom_density(alpha=0.7) + theme_bw() +
+#   ggtitle("Z-scaled Page.Rank for top 1000 genes by min P-value within 10 kb") +
+#   coord_cartesian(xlim = c(-2, 50))
+# ggplot(network.grch37.excl.minp %>% filter(Zsco.page.rank.node < 15), aes(x=Zsco.page.rank.node, fill=top1000_minp)) +
+#   geom_density(alpha=0.7) + theme_bw() +
+#   ggtitle("Z-scaled Page.Rank for top 1000 genes by min P-value within 10 kb (Zsco < 15)") +
+#   coord_cartesian(xlim = c(-2, 15))
+# 
+# ggplot(network.grch37.excl.minp, aes(x=page.rank.quantile, fill=top1000_minp)) +
+#   geom_density(alpha=0.7) + theme_bw() +
+#   ggtitle("Page.Rank quantile for top 1000 genes by min P-value within 10 kb")
+# ggplot(network.grch37.excl.minp, aes(x=Zsco.page.rank.quantile, fill=top1000_minp)) +
+#   geom_density(alpha=0.7) + theme_bw() +
+#   ggtitle("Z-scaled Page.Rank quantile for top 1000 genes by min P-value within 10 kb")
+
+```
+
+Page.ranks look like like they tend to be higher for the top 100 genes by minp value (and also top 1000 genes... not shown). Test this for the top 100 and 1000 genes.
+
+#### Top 100 genes (page.rank, and Z-scaled page.rank)
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+#View(network.grch37.excl.minp %>% select(ENSG, gene, degree, page.rank, page.rank.quantile, Zsco.page.rank.node, Zsco.page.rank.quantile, minp, top100_pageRank, top100_ZpageRank, top500_pageRank, top500_ZpageRank, top100_minp, top1000_minp, everything()))
+
+wilcox.test(network.grch37.excl.minp %>% filter(top100_minp) %>% .$page.rank.quantile,
+            network.grch37.excl.minp %>% filter(!top100_minp) %>% .$page.rank.quantile,
+            alternative = "greater")
+wilcox.test(network.grch37.excl.minp %>% filter(top100_minp) %>% .$Zsco.page.rank.quantile,
+            network.grch37.excl.minp %>% filter(!top100_minp) %>% .$Zsco.page.rank.quantile,
+            alternative = "greater")
+```
+
+#### Top 1000 genes (page.rank, and Z-scaled page.rank)
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+wilcox.test(network.grch37.excl.minp %>% filter(top1000_minp) %>% .$page.rank.quantile,
+            network.grch37.excl.minp %>% filter(!top1000_minp) %>% .$page.rank.quantile,
+            alternative = "greater")
+wilcox.test(network.grch37.excl.minp %>% filter(top1000_minp) %>% .$Zsco.page.rank.quantile,
+            network.grch37.excl.minp %>% filter(!top1000_minp) %>% .$Zsco.page.rank.quantile,
+            alternative = "greater")
+```
+
+The difference is not significant for the top 100 genes by minp value (p = 0.20. 0.40), but it is for the top 1000 genes (p = 0.036, 0.01).
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+# Write out a table of the top genes by min p value and high Z-scaled page.rank
+
+network.save = network.grch37.excl.minp %>%
+  select(ENSG, gene, degree, chr, start, end, minp, minp.quantile, top1000_minp, page.rank, page.rank.quantile, Zsco.page.rank.node, Zsco.page.rank.quantile, biotype, description)
+
+network.save.top = network.save %>%
+  filter(top1000_minp, Zsco.page.rank.quantile > 0.9) %>%
+  select(-top1000_minp) %>%
+  arrange(desc(Zsco.page.rank.node))
+
+write.table(network.save.top, file = file.path(ad_dir, "network/network.annotated.highly_ranked.tsv"),
+            sep="\t", quote=F, col.names=T, row.names=F, na="")
+
+# Write out a table of genes per locus, with our features of interest (page.rank, distance, etc)
+# Don't exclude our selected genes from this table
+
+network.save.locus = locus.500kb.ranks.df %>%
+  select(locus, gene_id, gene, page.rank, pagerank.rank, pagerank.locus_quantile, Zsco.page.rank.node, Zsco.pagerank.rank, Zsco.pagerank.locus_quantile) %>%
+  left_join(grch37.nodup %>% select(ensgene, chr, start, end, biotype, description), by = c("gene_id" = "ensgene")) %>%
+  left_join(network.grch37.minp %>% select(ENSG, degree, minp, minp.quantile, top1000_minp, page.rank.quantile, Zsco.page.rank.quantile), by = c("gene_id" = "ENSG")) %>%
+  arrange(chr, locus, desc(Zsco.page.rank.node))
+
+# Add to this the distance from each gene to the lead SNP.
+ad.loci.df = readr::read_tsv(file.path(ad_dir, "AD.loci.tsv")) %>%
+  select(locus = locus_name, locus_start = start, locus_stop = stop)
+network.save.locus = network.save.locus %>%
+  left_join(ad.loci.df, by = "locus") %>%
+  group_by(gene_id) %>%
+  mutate(dist_to_leadSNP = min(c(abs(start - locus_start), abs(start - locus_stop), abs(end - locus_start), abs(end - locus_stop)))) %>%
+  select(locus, gene_id, gene, dist_to_leadSNP, degree, everything(), -locus_start, -locus_stop)
+write.table(network.save.locus, file = file.path(ad_dir, "network/network.annotated.by_locus.tsv"),
+            sep="\t", quote=F, col.names=T, row.names=F, na="")
+
+```
+
+### Enriched pathways
+
+Let's see what pathways come out as enriched among genes with high page.ranks (apart from our selected genes). The plots below are from GoSummaries.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+library(GOsummaries)
+library(gProfileR)
+topGenesPR = network.grch37.excl.minp %>% arrange(desc(page.rank)) %>% .$ENSG %>% .[1:100]
+
+# Exclude the multiple complement genes near the HLA region where there may be a
+# secondary signal, or an extended LD from HLA.
+#topGenesZPR = network.grch37.excl.minp %>% arrange(desc(Zsco.page.rank.node)) %>% .$ENSG %>% .[1:100]
+topGenesZPR = network.grch37.excl.minp %>% filter(!(chr == 6 & abs(start - 31800000) < 500000)) %>% arrange(desc(Zsco.page.rank.node)) %>% .$ENSG %>% .[1:100]
+
+gs = gosummaries(list(topPageRank = topGenesPR), custom_bg = network.grch37.excl.minp$ENSG)
+plot(gs, fontsize = 11)
+
+gs = gosummaries(list(topZPageRank = topGenesZPR), custom_bg = network.grch37.excl.minp$ENSG)
+plot(gs, fontsize = 11)
+
+gp.pageRank = gprofiler(query = topGenesPR, custom_bg = network.grch37.excl.minp$ENSG, organism = "hsapiens")
+gp.ZpageRank = gprofiler(query = topGenesZPR, custom_bg = network.grch37.excl.minp$ENSG, organism = "hsapiens")
+gp.pageRank %>% write.table(file=file.path(ad_dir, "network/network.pageRank.top100.gprofiler.tsv"), sep="\t", quote=F, row.names=F, col.names=T)
+gp.ZpageRank %>% write.table(file=file.path(ad_dir, "network/network.ZpageRank.top100.gprofiler.tsv"), sep="\t", quote=F, row.names=F, col.names=T)
+
+# Top 1000 genes
+topGenesPR = network.grch37.excl.minp %>% arrange(desc(page.rank)) %>% .$ENSG %>% .[1:1000]
+topGenesZPR = network.grch37.excl.minp %>% arrange(desc(Zsco.page.rank.node)) %>% .$ENSG %>% .[1:1000]
+
+gs = gosummaries(list(topPageRank = topGenesPR), custom_bg = network.grch37.excl.minp$ENSG)
+plot(gs, fontsize = 11)
+
+gs = gosummaries(list(topZPageRank = topGenesZPR), custom_bg = network.grch37.excl.minp$ENSG)
+plot(gs, fontsize = 11)
+
+gp.pageRank = gprofiler(query = topGenesPR, custom_bg = network.grch37.excl.minp$ENSG, organism = "hsapiens")
+gp.ZpageRank = gprofiler(query = topGenesZPR, custom_bg = network.grch37.excl.minp$ENSG, organism = "hsapiens")
+gp.pageRank %>% write.table(file=file.path(ad_dir, "network/network.pageRank.top1000.gprofiler.tsv"), sep="\t", quote=F, row.names=F, col.names=T)
+gp.ZpageRank %>% write.table(file=file.path(ad_dir, "network/network.ZpageRank.top1000.gprofiler.tsv"), sep="\t", quote=F, row.names=F, col.names=T)
+```
+
+
+### Top genes of interest
+
+A table of genes of interest, based on having a low p value and a high Z-scored page.rank, is saved, and some top rows shown below.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+print(network.save.top[1:20,] %>% select(-ENSG, -chr, -start, -end, -minp.quantile, -page.rank.quantile))
+```
+
+

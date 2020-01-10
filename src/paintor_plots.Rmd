@@ -1,0 +1,141 @@
+---
+title: "RNA-seq of iPSC-derived microglia edited for CCDC6 rs1171830 and rs1171832"
+output: html_document
+---
+  
+## PAINTOR plots
+Plots for paper figures based on PAINTOR SNP fine-mapping from AD summary stats.
+
+```{r Setup, message=FALSE, warning=FALSE, echo=FALSE}
+library(tidyverse)
+root = "/Users/jeremys/work/opentargets/AD_finemap"
+```
+
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE, fig.height = 5, fig.width = 3}
+annot.df = readr::read_tsv(file.path(root, "annotated/AD.meta.annotated.selected.probable.paintor.tsv"))
+  
+annot.df = annot.df %>%
+  group_by(locus_name, snp) %>%
+  mutate(locus_cond = paste(locus_name, gcta_cond_snps)) %>%
+  ungroup()
+
+signals.df = annot.df %>% select(locus_name, gcta_cond_snps, locus_cond, locus_nSnps) %>%
+  filter(!duplicated(locus_cond)) %>%
+  group_by(locus_name) %>%
+  mutate(signal = row_number()) %>%
+  mutate(locus_signal = ifelse(locus_nSnps == 1, locus_name, paste(locus_name, signal, sep="-"))) %>%
+  ungroup()
+
+annot.df = annot.df %>% left_join(signals.df %>% select(locus_cond, locus_signal), by="locus_cond")
+
+# Number of variants per locus
+locus.num_variants = annot.df %>% group_by(locus_name, gcta_cond_snps, locus_signal) %>%
+  summarise(num_variants = n(),
+            num_candidates = sum(mean_prob > 0.01),
+            top_candidate_p = min(META_P),
+            top_candidate_prob = max(mean_prob)) %>%
+  group_by(locus_name) %>%
+  arrange(top_candidate_p) %>%
+  mutate(signal = row_number()) %>%
+  ungroup()
+
+p1 = ggplot(locus.num_variants, aes(x=fct_reorder(locus_signal, -num_candidates), y=num_candidates, fill="blue")) +
+  geom_bar(stat="identity") + 
+  theme_bw(8) + scale_fill_manual(values = c("cornflowerblue"), guide=F) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1),
+        panel.grid = element_blank()) +
+  coord_flip() +
+  ylab("Number of variants") + xlab("Locus-signal")
+
+locus.num_variants = locus.num_variants %>%
+  group_by(locus_name) %>%
+  arrange(signal) %>%
+  mutate(primary_nCandidates = first(num_candidates),
+         secondary_nCandidates = nth(num_candidates, 2),
+         signal = factor(as.character(signal), levels=c("3","2","1"))) %>%
+  ungroup()
+
+locus_levels = locus.num_variants %>% arrange(-primary_nCandidates, -secondary_nCandidates) %>% filter(!duplicated(locus_name)) %>% .$locus_name %>% as.character()
+locus.num_variants = locus.num_variants %>%
+  mutate(locus_name = factor(as.character(locus_name), levels = locus_levels))
+
+p.numvars = ggplot(locus.num_variants, aes(x=locus_name, y=num_candidates, fill=signal)) +
+  geom_bar(stat="identity") + 
+  theme_bw(8) + 
+  theme(panel.grid = element_blank(),
+        legend.position = c(0.8, 0.45)) +
+  coord_flip() +
+  ylab("Number of variants") + xlab("Locus") +
+  scale_fill_manual(values = c("1"="#4080FF", "2"="#77AAFF", "3"="#BBDDFF"))
+print(p.numvars)
+
+#print(p1)
+#print(p1 + scale_y_log10())
+
+```
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE, fig.height = 5, fig.width = 6.5}
+#### PAINTOR annotation enrichments
+
+# Only include annotations which cover at least 20 SNPs
+paintor_snp_annots.df = readr::read_delim(file.path(root, "paintor_cred/all_annotations.txt"), delim = " ")
+paintor_annot_short.df = readr::read_tsv(file.path(root, "paintor_cred/annotation_names_short.tsv"))
+annot_num_snps = colSums(paintor_snp_annots.df)
+
+paintor_annots.df = data.frame(annotation = names(annot_num_snps), numSnps = annot_num_snps) %>%
+  left_join(paintor_annot_short.df, by="annotation")
+enrichments.df = readr::read_tsv(file.path(root, "paintor_cred/out_single_annotations_nc2/out_single_annotations_nc2.enrichments.txt")) %>%
+  mutate(enrichment = -enrichment)
+annot_llks.df = readr::read_tsv(file.path(root, "paintor_cred/out_single_annotations_nc2/out_single_annotations_nc2.LogBayesFactor.txt"))
+
+paintor_annots.df = paintor_annots.df %>%
+  left_join(enrichments.df, by="annotation") %>%
+  left_join(annot_llks.df, by="annotation")
+
+# Also remove the merged track of microglia or macrophage ATAC, since we have these separately
+# and remove "any UTR" since it's confusing (5'UTR is enriched, but has very few SNPs).
+annot_plot.df = paintor_annots.df %>% filter(numSnps >= 20, !(annotation_short %in% c("mic/mac ATAC", "Any UTR"))) %>% na.omit()
+annot_plot.df$model_annot = annot_plot.df$annotation %in% c("Blood_Immune_DNase", "coding_nonsyn", "spliceai_gt_0.01")
+
+#View(paintor_annots.df %>% filter(numSnps < 20))
+p1 = ggplot(annot_plot.df, aes(x=fct_reorder(annotation_short, llk), y=llk, fill="blue", col=model_annot)) +
+  geom_bar(stat="identity", size = 0.4) + 
+  theme_bw(8) + theme(panel.grid = element_blank()) +
+  scale_fill_manual(values = c("cornflowerblue"), guide=F) +
+  scale_color_manual(values = c("TRUE" = "black", "FALSE" = NA), guide=F) +
+  ylab("Model LLK") + xlab("Annotation") +
+  coord_flip(ylim=c(min(annot_plot.df$llk), max(annot_plot.df$llk)))
+#theme(panel.grid = element_blank(), axis.text.x = element_text(angle = 30, hjust = 1)) +
+#p = p + scale_y_log10()
+
+p2 = ggplot(annot_plot.df, aes(x=fct_reorder(annotation_short, llk), y=enrichment, fill="blue", col=model_annot)) +
+  geom_bar(stat="identity", size = 0.4) + 
+  theme_bw(8) + theme(panel.grid = element_blank(), axis.text.y = element_blank(), axis.title.y = element_blank()) +
+  scale_fill_manual(values = c("cornflowerblue"), guide=F) +
+  scale_color_manual(values = c("TRUE" = "black", "FALSE" = NA), guide=F) +
+  ylab("Enrichment (log odds)") +
+  coord_flip(ylim=c(-1.5, max(annot_plot.df$enrichment)))
+  #coord_flip(ylim=c(min(annot_plot.df$enrichment), max(annot_plot.df$enrichment)))
+#p = p + scale_y_log10()
+
+annot_plot.df = annot_plot.df %>% mutate(snp_fraction = numSnps / nrow(paintor_snp_annots.df))
+p3 = ggplot(annot_plot.df, aes(x=fct_reorder(annotation_short, llk), y=snp_fraction, fill="blue", col=model_annot)) +
+  geom_bar(stat="identity", size = 0.4) + 
+  theme_bw(8) + theme(panel.grid = element_blank(), axis.text.y = element_blank(), axis.title.y = element_blank()) +
+  scale_fill_manual(values = c("cornflowerblue"), guide=F) +
+  scale_color_manual(values = c("TRUE" = "black", "FALSE" = NA), guide=F) +
+  ylab("Fraction of SNPs") +
+  coord_flip(ylim=c(min(annot_plot.df$snp_fraction), max(annot_plot.df$snp_fraction)))
+
+cowplot::plot_grid(plotlist=list(p.numvars, p1, p2, p3), ncol=4, rel_widths = c(0.8, 0.7, 0.4, 0.4), align="h")
+
+write_tsv(paintor_annots.df, file.path(root, "paintor_cred/paintor_annotation_summary.tsv"))
+```
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE, fig.height = 5, fig.width = 6.5}
+pdf(file.path(root, "plots/paintor_finemapping.pdf"), width=6.5, height=5)
+cowplot::plot_grid(plotlist=list(p.numvars, p1, p2, p3), ncol=4, rel_widths = c(0.8, 0.7, 0.4, 0.4), align="h")
+dev.off()
+```
+

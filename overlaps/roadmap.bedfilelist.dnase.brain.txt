@@ -1,0 +1,16 @@
+E007	reference/annotations/Roadmap/imputed/peaks/E007-DNase.imputed.narrowPeak.bed
+E009	reference/annotations/Roadmap/imputed/peaks/E009-DNase.imputed.narrowPeak.bed
+E010	reference/annotations/Roadmap/imputed/peaks/E010-DNase.imputed.narrowPeak.bed
+E053	reference/annotations/Roadmap/imputed/peaks/E053-DNase.imputed.narrowPeak.bed
+E054	reference/annotations/Roadmap/imputed/peaks/E054-DNase.imputed.narrowPeak.bed
+E067	reference/annotations/Roadmap/imputed/peaks/E067-DNase.imputed.narrowPeak.bed
+E068	reference/annotations/Roadmap/imputed/peaks/E068-DNase.imputed.narrowPeak.bed
+E069	reference/annotations/Roadmap/imputed/peaks/E069-DNase.imputed.narrowPeak.bed
+E070	reference/annotations/Roadmap/imputed/peaks/E070-DNase.imputed.narrowPeak.bed
+E071	reference/annotations/Roadmap/imputed/peaks/E071-DNase.imputed.narrowPeak.bed
+E072	reference/annotations/Roadmap/imputed/peaks/E072-DNase.imputed.narrowPeak.bed
+E073	reference/annotations/Roadmap/imputed/peaks/E073-DNase.imputed.narrowPeak.bed
+E074	reference/annotations/Roadmap/imputed/peaks/E074-DNase.imputed.narrowPeak.bed
+E081	reference/annotations/Roadmap/imputed/peaks/E081-DNase.imputed.narrowPeak.bed
+E082	reference/annotations/Roadmap/imputed/peaks/E082-DNase.imputed.narrowPeak.bed
+E125	reference/annotations/Roadmap/imputed/peaks/E125-DNase.imputed.narrowPeak.bed

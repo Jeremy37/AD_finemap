@@ -1,0 +1,582 @@
+---
+title: "Gene prioritization at AD GWAS loci"
+output: html_document
+---
+
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+library(tidyverse)
+library(ggExtra)
+library(cowplot)
+library(scales)
+knitr::opts_chunk$set(fig.width=6, fig.height=5)
+
+theme_set(theme_bw())
+
+savePlots = F
+
+ad_dir = "/Users/jeremys/work/opentargets/AD_finemap"
+annotated_snps_file = paste0(ad_dir, "/annotated/AD.meta.annotated.selected.probable.paintor.tsv")
+coloc_scores_file = paste0(ad_dir, "/coloc/coloc.AD.meta.colocScores.per_gene.tsv")
+network_file = paste0(ad_dir, "/network/ad_network.loci.500kb.tsv")
+gene_expr_file = paste0(ad_dir, "/genes/AD.loci.1Mb_window.gene_overlaps.all.selected_tpms.tsv")
+output_root = "/Users/jeremys/work/opentargets/AD_finemap/genes/"
+
+annot.df = readr::read_tsv(annotated_snps_file, col_names = T,
+                           col_types = cols(.default = col_character(), mean_prob="d", paintor_pp="d",
+                                            finemap_prob_nc="d", gcta_maxCondProb="d", spliceai_max_DS="d"))
+colocScores.df = readr::read_tsv(coloc_scores_file) %>%
+  filter(!is.na(ensembl_id))
+colocScores.df$maxH4 = apply(colocScores.df %>% select(-locus_name, -ensembl_id, -geneSymbol, -colocScore, -scoreRank), MARGIN = 1,
+                             function(x) max(x, na.rm=T))
+
+network.df = readr::read_tsv(network_file)
+
+# The gene expression table includes genes within 500 kb of AD GWAS peaks, and is
+# the basis for our gene annotations
+geneExpr.df = readr::read_tsv(gene_expr_file)
+
+geneExpr.df$maxExpr = apply(geneExpr.df[,16:ncol(geneExpr.df)], MARGIN=1, FUN=function(x) max(x, na.rm=T))
+geneExpr.df = geneExpr.df %>%
+  filter(grepl("protein_coding", biotype) | maxExpr > 1) %>%
+  select(-maxExpr, -lead_neglog10p)
+
+write.table(geneExpr.df, file=paste0(output_root, "AD.loci.1Mb_window.expressed_genes.all.tpms.tsv"),
+            col.names = T, row.names = F, quote=F, na="", sep="\t")
+```
+
+
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height = 3, fig.width = 5}
+###############################################################################
+# Gene distance evidence
+geneDistScore = function(x) {
+  distBias = 6355
+  maxDist = 5e5
+  scores = (log10(maxDist) - log10((abs(x)+distBias))) / (log10(maxDist) - log10(distBias))
+  scores[scores < 0] = 0
+  scores
+}
+
+#df = data.frame(dist = c(0, 100, 1000, 10000, 50000, 100000, 250000))
+#df$score = geneDistScore(df$dist)
+#df
+p.dist = ggplot(data.frame(x = c(1, 500000)), aes(x = x)) +
+  stat_function(fun = geneDistScore) +
+  scale_x_log10() + xlab("Gene distance") + ylab("Score")
+#p.dist
+
+if (savePlots) {
+  pdf(file = paste0(output_root, "score.geneDistFunction.pdf"), width = 5, height = 3.5)
+  p.dist
+  dev.off()
+}
+```
+
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+
+###############################################################################
+# Coding variant fine-mapping evidence
+codingScores.df = annot.df %>%
+  filter(grepl("missense|frameshift_variant|splice_donor_variant|stop_gained|stop_lost", Consequence)) %>%
+  group_by(Gene) %>%
+  summarise(codingScore = sum(paintor_pp))
+
+codingScores.df = annot.df %>%
+  filter(grepl("missense|frameshift_variant|splice_donor_variant|stop_gained|stop_lost", Consequence)) %>%
+  group_by(Gene) %>%
+  summarise(codingScore = sum(mean_prob) * 2)
+#sum(codingScores.df$codingScore)
+
+###############################################################################
+# Merge scores together
+getGeneScores = function(geneExpr.df, useMaxH4 = F) {
+  merged.df = geneExpr.df %>%
+    left_join(colocScores.df %>% select(locus_name, ensembl_id, colocScore, colocScoreRank = scoreRank, colocMaxH4 = maxH4),
+              by = c("locus" = "locus_name", "geneID" = "ensembl_id")) %>%
+    group_by(locus, geneID) %>%
+    mutate(colocScore = ifelse(is.na(colocScore), 0, colocScore),
+           colocMaxH4 = ifelse(is.na(colocMaxH4), 0, colocMaxH4)) %>%
+    left_join(codingScores.df, by=c("geneID"="Gene")) %>%
+    mutate(codingScore = ifelse(is.na(codingScore), 0, codingScore),
+           geneDistScore = geneDistScore(dist)) %>%
+    ungroup() %>%
+    mutate(colocScoreRank = rank(-colocScore),
+           colocMaxH4Rank = rank(-colocMaxH4))
+  
+  # First version of expression scores
+  # merged.df = merged.df %>%
+  #   group_by(locus, geneID) %>%
+  #   mutate(brainExprSpecificityScore = max(0, brain_quantile - 0.5) * 2,
+  #          microgliaExprSpecificityScore = max(0, microglia_quantile - 0.5) * 2,
+  #          brainExprScore = if_else(is.na(brainExprSpecificityScore), 0, brainExprSpecificityScore),
+  #          microgliaExprScore = if_else(is.na(microgliaExprSpecificityScore), 0, microgliaExprSpecificityScore),
+  #          exprScore = max(microgliaExprScore, brainExprScore)
+  #          )
+  merged.df = merged.df %>%
+    group_by(locus, geneID) %>%
+    mutate(brainExprSpecificityScore = max(0, brain_quantile - 0.5) * 2,
+           microgliaExprSpecificityScore = max(0, microglia_quantile - 0.5) * 2,
+           brainExprScore = if_else(is.na(brainExprSpecificityScore), 0, brainExprSpecificityScore),
+           microgliaExprScore = if_else(is.na(microgliaExprSpecificityScore), 0, microgliaExprSpecificityScore),
+           exprScore = max(microgliaExprScore, brainExprScore),
+           meanBrainExp = mean(c(ROSMAP_brain, `BrainSeq brain`, GTEx_hippocampus, `Brain - Cerebellum`, `Brain - Cortex`), na.rm=T),
+           brainIsExpressedScore = if_else(is.na(meanBrainExp) | meanBrainExp < 1, 0, 1),
+           microgliaIsExpressedScore = if_else(is.na(primary_microglia) | primary_microglia < 1, 0, 1),
+           isExpressedScore = max(microgliaIsExpressedScore, brainIsExpressedScore),
+           microgliaExprLevelScore = if_else(is.na(primary_microglia) | primary_microglia < 1, 0, log10(primary_microglia) / 3),
+           brainExprLevelScore = if_else(is.na(meanBrainExp) | meanBrainExp < 1, 0, log10(meanBrainExp) / 3),
+           exprLevelScore = max(microgliaExprLevelScore, brainExprLevelScore)
+           )
+  # merged.df = merged.df %>%
+  #   group_by(locus, geneID) %>%
+  #   mutate(meanBrainExp = mean(c(ROSMAP_brain, `BrainSeq brain`, GTEx_hippocampus, `Brain - Cerebellum`, `Brain - Cortex`), na.rm=T),
+  #          brainIsExpressedScore = if_else(is.na(meanBrainExp) | meanBrainExp < 1, 0, 1),
+  #          microgliaIsExpressedScore = if_else(is.na(primary_microglia) | primary_microglia < 1, 0, 1),
+  #          brainExprSpecificityScore = max(0, brain_quantile - 0.5) * 2,
+  #          microgliaExprSpecificityScore = max(0, microglia_quantile - 0.5) * 2,
+  #          brainExprSpecificityScore = if_else(is.na(brainExprSpecificityScore), 0, brainExprSpecificityScore),
+  #          microgliaExprSpecificityScore = if_else(is.na(microgliaExprSpecificityScore), 0, microgliaExprSpecificityScore),
+  #          brainExprScore = brainIsExpressedScore * 0.25 + brainExprSpecificityScore * 0.75,
+  #          microgliaExprScore = microgliaIsExpressedScore * 0.25 + microgliaExprSpecificityScore * 0.75)
+  merged.df = merged.df %>%
+    mutate(exprScore = max(microgliaExprScore, brainExprScore))
+  
+  merged.df = merged.df %>%
+    left_join(network.df %>% select(geneID, page.rank.pctile), by="geneID") %>%
+    mutate(networkScore = max(0, page.rank.pctile - 50) / 100 * 2) %>%
+    mutate(networkScore = if_else(is.na(networkScore), 0, networkScore))
+  
+  if (useMaxH4) {
+    merged.df = merged.df %>% mutate(colocScore = colocMaxH4, colocScoreRank = colocMaxH4Rank)
+  }
+  
+  merged.df = merged.df %>%
+    mutate(totalScore = codingScore + colocScore + geneDistScore + exprScore + networkScore,
+           totalScore.noNetwork = codingScore + colocScore + geneDistScore + exprScore,
+           totalScore.noColoc = codingScore + geneDistScore + exprScore + networkScore,
+           totalScore.noCoding = colocScore + geneDistScore + exprScore + networkScore,
+           totalScore.noDist = codingScore + colocScore + exprScore + networkScore,
+           totalScore.noExpr = codingScore + colocScore + geneDistScore + networkScore) %>%
+    ungroup()
+  merged.df
+}
+
+merged.df = getGeneScores(geneExpr.df, useMaxH4 = F)
+#View(merged.df[, -c(6:11)])
+```
+
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height = 4, fig.width = 6}
+# See how many of the top AD genes are recovered by either colocScore or maxH4
+#top_candidate_genes = readr::read_tsv(file.path(ad_dir, "candidate_genes.top.tsv"), col_names = c("symbol"))$symbol
+#selected_genes = readr::read_tsv(file.path(ad_dir, "candidate_genes.tsv"), col_names = c("symbol"))$symbol
+selected_genes = merged.df %>% arrange(desc(totalScore.noColoc)) %>% .$symbol %>% .[1:40]
+#View(merged.df2 %>% arrange(desc(totalScore.noColoc)))
+merged.df$is_candidate = merged.df$symbol %in% selected_genes
+merged.df$label = NA
+merged.df$label[merged.df$is_candidate] = merged.df$symbol[merged.df$is_candidate]
+#sum(merged.df$is_candidate)
+#View(merged.df %>% select(leadSNP:dist, is_candidate, totalScore, codingScore, colocScore, colocScoreRank, colocMaxH4, colocMaxH4Rank) %>% arrange(desc(is_candidate), desc(totalScore)))
+merged.df2 = merged.df %>%
+  group_by(locus, geneID) %>%
+  mutate(score_gt_0.8 = if_else(colocScore >= 0.8, if_else(colocMaxH4 >= 0.8, "both", "colocScore"), if_else(colocMaxH4 >= 0.8, "maxH4", "neither")),
+         rank_lt_50 = if_else(colocScoreRank <= 50, if_else(colocMaxH4Rank <= 50, "both", "colocScore"), if_else(colocMaxH4Rank <= 50, "maxH4", "neither")),
+         rank_lt_80 = if_else(colocScoreRank <= 80, if_else(colocMaxH4Rank <= 80, "both", "colocScore"), if_else(colocMaxH4Rank <= 80, "maxH4", "neither")))
+```
+
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height = 2.5, fig.width = 6}
+candidate_genes = readr::read_tsv(file.path(ad_dir, "candidate_genes.tsv"), col_names = c("symbol"))$symbol
+
+merged.df = getGeneScores(geneExpr.df, useMaxH4 = T)
+merged.df$is_candidate = merged.df$symbol %in% candidate_genes
+merged.df$label = NA
+merged.df$label[merged.df$is_candidate] = merged.df$symbol[merged.df$is_candidate]
+
+# Round values to 3 decimal places
+roundToString = function(x) {
+  if (is.na(x)) { return("") }
+  sprintf("%.3g", round(x, digits = 3))
+}
+merged.to_save = merged.df %>% select(leadSNP:dist, totalScore, codingScore, colocScore, colocMaxH4, geneDistScore, networkScore, exprScore, microgliaExprScore, brainExprScore, primary_microglia_tpm = primary_microglia, ipsc_microglia_tpm = ipsc_microglia, ROSMAP_brain_tpm = ROSMAP_brain)
+write.table(merged.to_save, file=paste0(output_root, "AD.loci.1Mb_window.expressed_genes.all.geneScores.tsv"),
+            col.names = T, row.names = F, quote=F, na="", sep="\t")
+
+merged.rounded = cbind(merged.df %>% select(leadSNP:dist),
+                       apply(merged.df %>% select(totalScore, codingScore, colocScore, colocMaxH4, geneDistScore, networkScore, exprScore, microgliaExprScore, brainExprScore, primary_microglia_tpm = primary_microglia, ipsc_microglia_tpm = ipsc_microglia, ROSMAP_brain_tpm = ROSMAP_brain),
+                             MARGIN=c(1, 2), FUN=roundToString))
+write.table(merged.rounded, file=paste0(output_root, "AD.loci.1Mb_window.expressed_genes.all.geneScores.rounded.tsv"),
+            col.names = T, row.names = F, quote=F, na="", sep="\t")
+```
+
+### Expression specificity score vs. expression level score - ALL genes
+
+I've defined 4 scores:
+
+- isExpressedScore - 1 if gene is expressed at TPM > 1, and 0 otherwise
+- exprLevelScore - log10(TPM) for genes with TPM > 1, and 0 otherwise
+- exprSpecificityScore - 2 * (expr quantile relative to GTEx tissues - 0.5). This uses the higher expression quantile from either microglia or brain, and subtracts 0.5 to only reward genes expressed in microglia or brain above the average of other tissues.
+- exprCombinedScore - 0.5 * exprLevelScore + 0.5 * exprSpecificityScore
+
+Below, I compare these scores with the total score excluding expression (so including distance, coding, coloc, network).
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+merged.df2 = merged.df %>%
+  mutate(exprSpecificityScore = exprScore)
+
+# x = cor.test(merged.df2$exprSpecificityScore, merged.df2$exprLevelScore, method = "spearman")
+# ggplot(merged.df2, aes(x=exprSpecificityScore, y=exprLevelScore)) +
+#   geom_point() + theme_bw() + geom_smooth() +
+#   annotate("text", x=0.00, y=1, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value))
+# 
+# x = cor.test(merged.df2$exprSpecificityScore, merged.df2$isExpressedScore, method = "spearman")
+# ggplot(merged.df2, aes(x=exprSpecificityScore, y=isExpressedScore)) +
+#   geom_point() + theme_bw() + geom_smooth() +
+#   annotate("text", x=0.00, y=0.25, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value))
+
+x = cor.test(merged.df2$isExpressedScore, merged.df2$totalScore.noExpr, method = "spearman")
+ggplot(merged.df2, aes(x=isExpressedScore, y=totalScore.noExpr)) +
+  geom_point() + theme_bw() + geom_smooth() +
+  annotate("text", x=0.00, y=4, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value)) +
+  ggtitle("IsExpressed vs. total score")
+
+x = cor.test(merged.df2$exprLevelScore, merged.df2$totalScore.noExpr, method = "spearman")
+ggplot(merged.df2, aes(x=exprLevelScore, y=totalScore.noExpr)) +
+  geom_point() + theme_bw() + geom_smooth() +
+  annotate("text", x=0.00, y=4, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value)) +
+  ggtitle("Expression level vs. total score")
+
+x = cor.test(merged.df2$exprSpecificityScore, merged.df2$totalScore.noExpr, method = "spearman")
+ggplot(merged.df2, aes(x=exprSpecificityScore, y=totalScore.noExpr)) +
+  geom_point() + theme_bw() + geom_smooth() +
+  annotate("text", x=0.00, y=4, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value)) +
+  ggtitle("Expression specificity vs. total score")
+
+merged.df2$exprCombinedScore = merged.df2$exprLevelScore * 0.5 + merged.df2$exprScore * 0.5
+x = cor.test(merged.df2$exprCombinedScore, merged.df2$totalScore.noExpr, method = "spearman")
+ggplot(merged.df2, aes(x=exprCombinedScore, y=totalScore.noExpr)) +
+  geom_point() + theme_bw() + geom_smooth() +
+  annotate("text", x=0.00, y=4, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value)) +
+  ggtitle("Combined expr level & specificity vs. total score")
+
+ merged.df2$microgliaExprCombinedScore = merged.df2$microgliaExprLevelScore * 0.5 + merged.df2$microgliaExprSpecificityScore * 0.5
+# x = cor.test(merged.df2$microgliaExprCombinedScore, merged.df2$totalScore.noExpr, method = "spearman")
+# ggplot(merged.df2, aes(x=microgliaExprCombinedScore, y=totalScore.noExpr)) +
+#   geom_point() + theme_bw() + geom_smooth() +
+#   annotate("text", x=0.00, y=4, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value)) +
+#   ggtitle("Combined microglia expr level & specificity vs. total score")
+
+```
+
+There are a few things to unpack here.
+
+- expression level seems to do the best (highest correlation with total score)
+- expression specificity seems to do poorly
+- combining the two does worse than just expression level
+
+HOWEVER, an important issue is that I've included many non-coding genes, which are NOT present in the gene network, and are also expressed at lower levels. This introduces a strong correlation between expression level and network score, because protein-coding genes are expressed more highly and only protein-coding genes are in the network.
+
+### Expression specificity score vs. expression level score - protein-coding genes
+
+Here we compare the different scores when considering only protein-coding genes, which makes the score more "fair".
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+merged.df2 = merged.df2 %>% filter(!is.na(page.rank.pctile))
+
+x = cor.test(merged.df2$isExpressedScore, merged.df2$totalScore.noExpr, method = "spearman")
+ggplot(merged.df2, aes(x=isExpressedScore, y=totalScore.noExpr)) +
+  geom_jitter(width=0.03) + theme_bw() + geom_smooth() +
+  annotate("text", x=0.00, y=4, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value)) +
+  ggtitle("IsExpressed vs. total score")
+
+x = cor.test(merged.df2$exprLevelScore, merged.df2$totalScore.noExpr, method = "spearman")
+ggplot(merged.df2, aes(x=exprLevelScore, y=totalScore.noExpr)) +
+  geom_jitter(width=0.03) + theme_bw() + geom_smooth() +
+  annotate("text", x=0.00, y=4, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value)) +
+  ggtitle("Expression level vs. total score")
+
+x = cor.test(merged.df2$exprSpecificityScore, merged.df2$totalScore.noExpr, method = "spearman")
+ggplot(merged.df2, aes(x=exprSpecificityScore, y=totalScore.noExpr)) +
+  geom_jitter(width=0.03) + theme_bw() + geom_smooth() +
+  annotate("text", x=0.00, y=4, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value)) +
+  ggtitle("Expression specificity vs. total score")
+
+merged.df2$exprCombinedScore = merged.df2$exprLevelScore * 0.5 + merged.df2$exprScore * 0.5
+x = cor.test(merged.df2$exprCombinedScore, merged.df2$totalScore.noExpr, method = "spearman")
+ggplot(merged.df2, aes(x=exprCombinedScore, y=totalScore.noExpr)) +
+  geom_jitter(width=0.03) + theme_bw() + geom_smooth() +
+  annotate("text", x=0.00, y=4, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value)) +
+  ggtitle("Combined expr level & specificity vs. total score")
+
+#cor.test(merged.df2$microgliaExprSpecificityScore, merged.df2$totalScore.noExpr, method = "spearman")
+#cor.test(merged.df2$brainExprSpecificityScore, merged.df2$totalScore.noExpr, method = "spearman")
+#cor.test(merged.df2$microgliaExprLevelScore, merged.df2$totalScore.noExpr, method = "spearman")
+#cor.test(merged.df2$brainExprLevelScore, merged.df2$totalScore.noExpr, method = "spearman")
+#cor.test(merged.df2$exprSpecificityScore, merged.df2$totalScore.noExpr, method = "spearman")
+
+# summary(merged.df2 %>% filter(is_candidate) %>% .$microgliaExprSpecificityScore)
+# summary(merged.df2 %>% filter(is_candidate) %>% .$brainExprSpecificityScore)
+# summary(merged.df2 %>% filter(is_candidate) %>% .$exprSpecificityScore)
+# summary(merged.df2$microgliaExprSpecificityScore)
+# summary(merged.df2$brainExprSpecificityScore)
+# summary(merged.df2$exprSpecificityScore)
+
+#View(merged.df[, -c(6:11)])
+#View(merged.df2 %>% filter(is_candidate) %>% select(locus, symbol, dist, totalScore, primary_microglia, meanBrainExp, contains("quantile"), microgliaExprSpecificityScore, brainExprSpecificityScore, exprSpecificityScore))
+```
+
+Now we see that:
+
+- isExpressed does very poorly
+- expression specificity shows the highest correlation
+- combining expression specificity and level is very similar to specificity only
+
+It *looks* as if expression level shows more of a trend, but that is an artifact of the fitted curve and the distribution of points. Results are the same with either Pearson or Spearman correlation.
+
+Let's do the same thing, but instead of looking at total score (no expr) we look at the rank of a gene's score within its locus. This better accounts for variation in total score across loci.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+merged.df2 = merged.df2 %>% filter(!is.na(page.rank.pctile)) %>%
+  group_by(locus) %>%
+  arrange(desc(totalScore.noExpr)) %>%
+  mutate(totalScore.noExpr.locusRank = (row_number())/ (n())) %>%
+  ungroup()
+
+x = cor.test(merged.df2$isExpressedScore, log10(merged.df2$totalScore.noExpr.locusRank), method = "spearman")
+ggplot(merged.df2, aes(x=isExpressedScore, y=totalScore.noExpr.locusRank)) +
+  geom_point() + theme_bw() + geom_smooth() +
+  annotate("text", x=0.00, y=4, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value)) +
+  ggtitle("IsExpressed vs. total score") + scale_y_log10()
+
+x = cor.test(merged.df2$exprLevelScore, log10(merged.df2$totalScore.noExpr.locusRank), method = "spearman")
+ggplot(merged.df2, aes(x=exprLevelScore, y=totalScore.noExpr.locusRank)) +
+  geom_point() + theme_bw() + geom_smooth() +
+  annotate("text", x=0.00, y=4, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value)) +
+  ggtitle("Expression level vs. total score") + scale_y_log10()
+
+x = cor.test(merged.df2$exprSpecificityScore, log10(merged.df2$totalScore.noExpr.locusRank), method = "spearman")
+ggplot(merged.df2, aes(x=exprSpecificityScore, y=totalScore.noExpr.locusRank)) +
+  geom_point() + theme_bw() + geom_smooth() +
+  annotate("text", x=0.00, y=4, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value)) +
+  ggtitle("Expression specificity vs. total score") + scale_y_log10()
+
+x = cor.test(merged.df2$exprCombinedScore, log10(merged.df2$totalScore.noExpr.locusRank), method = "spearman")
+ggplot(merged.df2, aes(x=exprCombinedScore, y=totalScore.noExpr.locusRank)) +
+  geom_point() + theme_bw() + geom_smooth() +
+  annotate("text", x=0.00, y=4, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value)) +
+  ggtitle("Combined expr level & specificity vs. total score") + scale_y_log10()
+
+#cor.test(merged.df2$microgliaExprSpecificityScore, merged.df2$totalScore.noExpr, method = "spearman")
+#cor.test(merged.df2$brainExprSpecificityScore, merged.df2$totalScore.noExpr, method = "spearman")
+#cor.test(merged.df2$microgliaExprLevelScore, merged.df2$totalScore.noExpr, method = "spearman")
+#cor.test(merged.df2$brainExprLevelScore, merged.df2$totalScore.noExpr, method = "spearman")
+#cor.test(merged.df2$exprSpecificityScore, merged.df2$totalScore.noExpr, method = "spearman")
+
+# summary(merged.df2 %>% filter(is_candidate) %>% .$microgliaExprSpecificityScore)
+# summary(merged.df2 %>% filter(is_candidate) %>% .$brainExprSpecificityScore)
+# summary(merged.df2 %>% filter(is_candidate) %>% .$exprSpecificityScore)
+# summary(merged.df2$microgliaExprSpecificityScore)
+# summary(merged.df2$brainExprSpecificityScore)
+# summary(merged.df2$exprSpecificityScore)
+
+#View(merged.df[, -c(6:11)])
+#View(merged.df2 %>% filter(is_candidate) %>% select(locus, symbol, dist, totalScore, primary_microglia, meanBrainExp, contains("quantile"), microgliaExprSpecificityScore, brainExprSpecificityScore, exprSpecificityScore))
+#View(merged.df2 %>% select(locus, symbol, totalScore, networkScore, page.rank.pctile, is_candidate))
+```
+
+### Compare microglia vs. brain expression scores
+
+Here we compare the expression scores for microglia and brain.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=6, fig.height=5}
+x = cor.test(merged.df2$microgliaExprSpecificityScore, merged.df2$totalScore.noExpr, method = "spearman")
+ggplot(merged.df2, aes(x=microgliaExprSpecificityScore, y=totalScore.noExpr)) +
+  geom_point() + theme_bw() + geom_smooth() +
+  annotate("text", x=0.00, y=4, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value)) +
+  ggtitle("Microglia expression specificity vs. total score")
+
+x = cor.test(merged.df2$brainExprSpecificityScore, merged.df2$totalScore.noExpr, method = "spearman")
+ggplot(merged.df2, aes(x=brainExprSpecificityScore, y=totalScore.noExpr)) +
+  geom_point() + theme_bw() + geom_smooth() +
+  annotate("text", x=0.00, y=4, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value)) +
+  ggtitle("Brain expression specificity vs. total score")
+
+x = cor.test(merged.df2$microgliaExprCombinedScore, merged.df2$totalScore.noExpr, method = "spearman")
+ggplot(merged.df2, aes(x=microgliaExprCombinedScore, y=totalScore.noExpr)) +
+  geom_point() + theme_bw() + geom_smooth() +
+  annotate("text", x=0.00, y=4, hjust=0, col="blue", label=sprintf("Spearman rho=%.3f, p=%.3g", x$estimate, x$p.value)) +
+  ggtitle("Combined microglia expr level & specificity vs. total score")
+
+merged.topMicrogliaExprSpecificity = merged.df2 %>%
+  arrange(desc(microgliaExprSpecificityScore)) %>%
+  .[1:100,] %>%
+  mutate(scoreGroup = "Top 100 microgliaExprSpecificity")
+
+merged.topBrainExprSpecificity = merged.df2 %>%
+  arrange(desc(brainExprSpecificityScore)) %>%
+  .[1:100,] %>%
+  mutate(scoreGroup = "Top 100 brainExprSpecificity")
+
+merged.topMicrogliaExprCombined = merged.df2 %>%
+  arrange(desc(microgliaExprCombinedScore)) %>%
+  .[1:100,] %>%
+  mutate(scoreGroup = "Top 100 microgliaExprCombined")
+
+merged.topBrainExprLevel = merged.df2 %>%
+  arrange(desc(brainExprLevelScore)) %>%
+  .[1:100,] %>%
+  mutate(scoreGroup = "Top 100 brain expression level")
+
+merged.topMicrogliaExprLevel = merged.df2 %>%
+  arrange(desc(microgliaExprLevelScore)) %>%
+  .[1:100,] %>%
+  mutate(scoreGroup = "Top 100 microglia expression level")
+
+merged.df3 = bind_rows(
+  merged.df2 %>% mutate(scoreGroup = "All genes"),
+  merged.topBrainExprSpecificity,
+  merged.topBrainExprLevel,
+  merged.topMicrogliaExprLevel,
+  merged.topMicrogliaExprSpecificity,
+  merged.topMicrogliaExprCombined
+)
+
+library(egg) # needed for theme_article()
+
+ggplot(merged.df3, aes(x=scoreGroup, y=totalScore.noExpr, fill=scoreGroup)) +
+  geom_violin(alpha = 0.7) + geom_jitter(width = 0.25, alpha = 0.4) + geom_boxplot(width = 0.05, outlier.shape = NA, fill="white") +
+  ggtitle("Scores for top 100 genes in different groups") +
+  theme_article(11) + theme(axis.text.x = element_text(angle = 20, hjust = 1), axis.title.x = element_blank()) +
+  scale_fill_discrete(guide=F) + ylab("Total score (without expression)")
+
+```
+
+- microglia expression specificity shows higher correlation than combined expression specificity
+- brain expression specificity has NO relationship with total score
+- combining microglia expression specificity and level again does slightly worse.
+
+I have checked these results in various ways. Looking at microglia vs. brain expression level gives similar results. Looking at only our top candidate genes gives similar results, i.e. microglial expression specificity does better in all cases, and does better than combining with expression level.
+
+### Compare expression specificity vs. expression level
+
+We do a similar violin plot looking at expression specificity and expression level (brain or microglia together) .
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=6, fig.height=5}
+library(egg) # needed for theme_article()
+
+merged.top40ExprSpecificity = merged.df2 %>%
+  arrange(desc(exprSpecificityScore)) %>%
+  .[1:40,] %>%
+  mutate(scoreGroup = "Top 40 expr specificity", scoreType = "specificity")
+
+merged.top40ExprLevel = merged.df2 %>%
+  arrange(desc(exprLevelScore)) %>%
+  .[1:40,] %>%
+  mutate(scoreGroup = "Top 40 expr level", scoreType = "level")
+
+merged.top40ExprCombined = merged.df2 %>%
+  arrange(desc(exprCombinedScore)) %>%
+  .[1:40,] %>%
+  mutate(scoreGroup = "Top 40 expr combined", scoreType = "combined")
+
+merged.top100ExprSpecificity = merged.df2 %>%
+  arrange(desc(exprSpecificityScore)) %>%
+  .[1:100,] %>%
+  mutate(scoreGroup = "Top 100 expr specificity", scoreType = "specificity")
+
+merged.top100ExprLevel = merged.df2 %>%
+  arrange(desc(exprLevelScore)) %>%
+  .[1:100,] %>%
+  mutate(scoreGroup = "Top 100 expr level", scoreType = "level")
+
+merged.top100ExprCombined = merged.df2 %>%
+  arrange(desc(exprCombinedScore)) %>%
+  .[1:100,] %>%
+  mutate(scoreGroup = "Top 100 expr combined", scoreType = "combined")
+
+merged.df4 = bind_rows(
+  merged.df2 %>% mutate(scoreGroup = "All genes"),
+  merged.top40ExprLevel,
+  merged.top40ExprSpecificity,
+  merged.top40ExprCombined,
+  merged.top100ExprLevel,
+  merged.top100ExprSpecificity,
+  merged.top100ExprCombined
+)
+ggplot(merged.df4, aes(x=scoreGroup, y=totalScore.noExpr, fill=scoreType)) +
+  geom_violin(alpha = 0.9) + geom_jitter(width = 0.25, alpha = 0.4) + geom_boxplot(width = 0.05, outlier.shape = NA, fill="white") +
+  ggtitle("Scores for top genes in different groups") +
+  theme_article(14) + theme(axis.text.x = element_text(angle = 20, hjust = 1), axis.title.x = element_blank()) +
+  scale_fill_discrete(guide=F) + ylab("Total score (without expression)")
+```
+
+Specificity and combined expression level both look very slightly better than expression level alone, but the differences aren't significant. All three look like top genes based on the score have higher total scores (without expression) on average. Let's statistically test this.
+
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=6, fig.height=5, eval=FALSE}
+summary(merged.top100ExprLevel$totalScore.noExpr)
+summary(merged.top100ExprSpecificity$totalScore.noExpr)
+summary(merged.top100ExprCombined$totalScore.noExpr)
+
+wilcox.test(merged.top100ExprLevel$totalScore.noExpr, merged.df2$totalScore.noExpr)
+wilcox.test(merged.top100ExprSpecificity$totalScore.noExpr, merged.df2$totalScore.noExpr)
+wilcox.test(merged.top100ExprCombined$totalScore.noExpr, merged.df2$totalScore.noExpr)
+
+summary(merged.top40ExprLevel$totalScore.noExpr)
+summary(merged.top40ExprSpecificity$totalScore.noExpr)
+summary(merged.top40ExprCombined$totalScore.noExpr)
+
+wilcox.test(merged.top40ExprLevel$totalScore.noExpr, merged.df2$totalScore.noExpr)
+wilcox.test(merged.top40ExprSpecificity$totalScore.noExpr, merged.df2$totalScore.noExpr)
+wilcox.test(merged.top40ExprCombined$totalScore.noExpr, merged.df2$totalScore.noExpr)
+```
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=6, fig.height=5, eval=FALSE}
+
+merged.df2 = merged.df2 %>% ungroup() %>%
+  arrange(desc(exprSpecificityScore)) %>%
+  mutate(exprSpecificityScoreRank = row_number()) %>%
+  arrange(desc(exprLevelScore)) %>%
+  mutate(exprLevelScoreRank = row_number())
+  
+
+summary(merged.df2$exprSpecificityScore)
+summary(merged.df2 %>% arrange(desc(totalScore.noExpr)) %>% filter(row_number() <= 40) %>% .$exprSpecificityScore)
+
+summary(merged.df2$exprLevelScore)
+summary(merged.df2 %>% arrange(desc(totalScore.noExpr)) %>% filter(row_number() <= 40) %>% .$exprLevelScore)
+
+summary(merged.df2$exprSpecificityScoreRank)
+summary(merged.df2 %>% arrange(desc(totalScore.noExpr)) %>% filter(row_number() <= 40) %>% .$exprSpecificityScoreRank)
+summary(merged.df2$exprLevelScoreRank)
+summary(merged.df2 %>% arrange(desc(totalScore.noExpr)) %>% filter(row_number() <= 40) %>% .$exprLevelScoreRank)
+
+merged.df5 = bind_rows(
+  merged.df2 %>% mutate(scoreGroup = "All - exprSpecificity", score = exprSpecificityScore),
+  merged.df2 %>% mutate(scoreGroup = "All - exprLevel", score = exprLevelScore),
+  merged.df2 %>% arrange(desc(totalScore.noExpr)) %>% filter(row_number() <= 40) %>% mutate(scoreGroup = "Top 40 - exprSpecificity", score = exprSpecificityScore),
+  merged.df2 %>% arrange(desc(totalScore.noExpr)) %>% filter(row_number() <= 40) %>% mutate(scoreGroup = "Top 40 - exprLevel", score = exprLevelScore)
+)
+
+ggplot(merged.df5, aes(x=scoreGroup, y=score, fill=scoreGroup)) +
+  geom_violin(alpha = 0.7) + geom_jitter(width = 0.25, alpha = 0.4) + geom_boxplot(width = 0.05, outlier.shape = NA, fill="white") +
+  ggtitle("Scores for top 40 genes by total score (no expr)") +
+  theme_article(11) + theme(axis.text.x = element_text(angle = 20, hjust = 1), axis.title.x = element_blank()) +
+  scale_fill_discrete(guide=F) + ylab("Score")
+
+merged.df5 = bind_rows(
+  merged.df2 %>% mutate(scoreGroup = "All - exprSpecificity", score = exprSpecificityScoreRank),
+  merged.df2 %>% mutate(scoreGroup = "All - exprLevel", score = exprLevelScoreRank),
+  merged.df2 %>% arrange(desc(totalScore.noExpr)) %>% filter(row_number() <= 40) %>% mutate(scoreGroup = "Top 40 - exprSpecificity", score = exprSpecificityScoreRank),
+  merged.df2 %>% arrange(desc(totalScore.noExpr)) %>% filter(row_number() <= 40) %>% mutate(scoreGroup = "Top 40 - exprLevel", score = exprLevelScoreRank)
+)
+
+ggplot(merged.df5, aes(x=scoreGroup, y=score, fill=scoreGroup)) +
+  geom_violin(alpha = 0.7) + geom_jitter(width = 0.25, alpha = 0.4) + geom_boxplot(width = 0.05, outlier.shape = NA, fill="white") +
+  ggtitle("Score ranks for top 40 genes by total score (no expr)") +
+  theme_article(11) + theme(axis.text.x = element_text(angle = 20, hjust = 1), axis.title.x = element_blank()) +
+  scale_fill_discrete(guide=F) + ylab("Score rank")
+```
+
