@@ -692,7 +692,7 @@ Rscript $SRC/add_paintor_probabilities.R --file annotated/$GWAS_NAME.annotated.s
 # Check that we have only changed the file by adding one column
 diff <(cut -f 1-24,30-107 annotated/$GWAS_NAME.annotated.selected.probable.tsv) <(cut -f 1-24,32-109 annotated/$GWAS_NAME.annotated.selected.probable.paintor.tsv) | head
 
-
+# When redoing the annotation, add back in the handmade notes we had added
 Rscript $SRC/merge_previous_annotated_table.R
 
 
@@ -849,4 +849,25 @@ $SRC/merge_gene_evidence.Rmd
 # SuppFig 2 - from merge_gene_evidence.Rmd
 # SuppFig 3 - from merge_gene_evidence.Rmd
 # SuppFig 4 - from merge_gene_evidence.exprScore.Rmd
+
+find $JS/AD_finemap_v5/src -name '*.Rmd' -print0 | xargs -r0 grep -H 'annotation_summary'
+find $JS/AD_finemap_v5/src -name '*.coloc_vs_maxH4'
+.coloc_details.txt
+# Supp Table 1 - made from file genes/AD.loci.gene_overlaps.pc.tsv, output by annotateRegionGenes.R
+# Supp Table 2 - QTL datasets - prepared manually
+# Supp Table 3 - QTL coloc summary - file coloc/output/coloc.AD.meta.all_colocs.supp_table.txt, output by annotate.coloc.R
+# Supp Table 4 - all QTL colocs - file annotated/AD.meta.annotated.coloc_details.txt, output by annotate.coloc.R
+# Supp Table 5 - genes for evaluating coloc - file genes/AD.loci.1Mb_window.coloc_vs_maxH4.tsv, output by merge_gene_evidence.Rmd
+# Supp Table 6 - PAINTOR annotations - file paintor_cred/paintor_annotation_summary.tsv, output by paintor_plots.Rmd
+
+# Supp Table 7 - SNP fine-mapping
+# We include a subset of the columns, as many contain information not used / not interesting
+cat $ROOT/annotated/$GWAS.annotated.selected.probable.paintor.with_notes.tsv \
+  | awk 'BEGIN{OFS="\t"}{print $2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$75,$16,$17,$73,$18,$19,$74,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$38,$39,$40,$41,$43,$44,$45,$46,$47,$55,$57,$58,$59,$64,$65,$66,$67,$68,$69,$70,$102,$103,$104,$105,$106,$107,$108,$109,$110,$111}' \
+  > $ROOT/annotated/$GWAS.annotated.forSuppTable.tsv
+
+# Supp Table 8 - QTL datasets - prepared manually
+# Supp Table 9 - QTL datasets - prepared manually
+# Supp Table 10 - QTL datasets - prepared manually
+# Supp Table 11 - QTL datasets - prepared manually
 

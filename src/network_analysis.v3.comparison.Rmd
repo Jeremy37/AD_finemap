@@ -1,0 +1,82 @@
+---
+title: "Comparison: runs of AD GWAS Network analysis"
+output: html_document
+---
+
+## Introduction
+Inigo ran two versions of the input: one which included TSPOAP1 and one which didn't. This gives me the opportunity to look at the stability of Z-scores from one run to the next.
+
+## Z-scored Page.rank in run 1 vs 2
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+library(tidyverse)
+library(ggExtra)
+library(annotables)
+options(stringsAsFactors = F)
+knitr::opts_chunk$set(fig.width=8.5, fig.height=5.2)
+theme_set(theme_bw())
+
+ad_dir = "/Users/jeremys/work/opentargets/AD_finemap"
+network.df1 = readr::read_csv(file.path(ad_dir, "network/Zsco_node_1000ite.csv"))
+network.df2 = readr::read_csv(file.path(ad_dir, "network/Zsco_node_TSPOAP1_1000ite.csv"))
+network.df1$in_input = network.df1$padj > 0
+network.df2$in_input = network.df2$padj > 0
+
+network.df1 = network.df1 %>%
+  mutate(Zsco.page.rank.node.pct = rank(Zsco.page.rank.node, ties.method = "average") / length(Zsco.page.rank.node) * 100)
+network.df2 = network.df2 %>%
+  mutate(Zsco.page.rank.node.pct = rank(Zsco.page.rank.node, ties.method = "average") / length(Zsco.page.rank.node) * 100)
+
+net.df = network.df1 %>%
+  filter(!in_input) %>%
+  select(ENSG, Trait, page.rank, Zsco.page.rank.node, Zsco.page.rank.node.pct, rankingIte1000.node) %>%
+  left_join(network.df2 %>%
+              filter(!in_input) %>%
+              select(ENSG, Trait, page.rank, Zsco.page.rank.node, Zsco.page.rank.node.pct, rankingIte1000.node),
+            by = c("ENSG", "Trait")) %>%
+  na.omit() %>%
+  mutate(rankingIte1000.node.x = rankingIte1000.node.x / 10,
+         rankingIte1000.node.y = rankingIte1000.node.y / 10)
+
+net.t1 = net.df %>% filter(Trait == "ENSG00000064687")
+
+ggplot(net.t1, aes(x=Zsco.page.rank.node.x, Zsco.page.rank.node.y)) +
+  geom_point(alpha = 0.3) + geom_smooth(method="lm") +
+  ggtitle("Z-sco.page.rank (run 1 vs 2)")
+ggplot(net.t1 %>% filter(abs(Zsco.page.rank.node.x) < 5, abs(Zsco.page.rank.node.y) < 5), aes(x=Zsco.page.rank.node.x, Zsco.page.rank.node.y)) +
+  geom_point(alpha = 0.3) + geom_smooth(method="lm") +
+  ggtitle("Z-sco.page.rank (run 1 vs 2) - ZOOM")
+
+summary(lm(Zsco.page.rank.node.y ~ Zsco.page.rank.node.x, data=net.t1))
+```
+
+The Z-scored page.rank values are highly correlated, but noisy. A linear regression slope is < 1, presumably because errors aren't normally distributed.
+
+## Page.rank percentile
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+p1 = ggplot(net.t1, aes(x=rankingIte1000.node.x, rankingIte1000.node.y)) +
+  geom_point(alpha = 0.3) +
+  ggtitle("Page.rank.pctile (run 1 vs 2)")
+p1
+```
+
+The page.rank percentile values are highly stable across runs.
+
+## Percentile of Z-scored page.rank
+
+The difference here is that we're not looking at the Z-scored page.rank relative to permutations for the same gene... just the percentile of Z-scored page.rank for a gene relative to all genes in the dataset (no need for permutations).
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+
+p1 = ggplot(net.t1, aes(x=Zsco.page.rank.node.pct.x, Zsco.page.rank.node.pct.y)) +
+  geom_point(alpha = 0.3, size=1) + geom_smooth(method="lm") + geom_vline(xintercept = 82.5)  + geom_hline(yintercept = 82.5) +
+  annotate("text", x=0, y=84, label="82.5%", col="red", size=4) +
+  annotate("text", x=83, y=2, label="82.5%", col="red", size=4, hjust=0)
+
+ggMarginal(p1, margins = 'both', type="density", size=10)
+```
+
+Interestingly, if we convert Z-scored page rank to a percentile across all genes, the plot of run 1 vs run 2 shows an intersting pattern. **Those genes with Z-PR above the 82nd percentile are highly consistent.** That is, more than 80% of the time they have Z-PR above the 82nd percentile if run again.
+
+(I wonder why the effect is striking at that particular percentile value? It might be specific to the AD input dataset we used...)
