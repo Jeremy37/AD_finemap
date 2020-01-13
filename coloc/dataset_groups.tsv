@@ -1,0 +1,121 @@
+dataset_short	category	dataset_group	celltype_group	celltype_group_broad
+brain_meta	relevant	brain_meta	brain	brain
+microglia	relevant	microglia	microglia	immune
+mono_eQTL	relevant	blueprint_mono	monocyte	immune
+neut_eQTL	possibly relevant	blueprint_neut	neutrophil	immune
+tcel_eQTL	possibly relevant	blueprint_tcell	Tcell	immune
+mono_h3k27ac	relevant	blueprint_mono	monocyte	immune
+mono_h3k4me1	relevant	blueprint_mono	monocyte	immune
+xQTL_eQTL	relevant	xQTL_brain	brain	brain
+xQTL_h3k27ac	relevant	xQTL_brain	brain	brain
+neut_h3k27ac	possibly relevant	blueprint_neut	neutrophil	immune
+neut_h3k4me1	possibly relevant	blueprint_neut	neutrophil	immune
+tcel_h3k27ac	possibly relevant	blueprint_tcell	Tcell	immune
+tcel_h3k4me1	possibly relevant	blueprint_tcell	Tcell	immune
+Alasoo_mac_IFNg	possibly relevant	Alasoo_mac	macrophage	immune
+Alasoo_mac_IFNg_SL	possibly relevant	Alasoo_mac	macrophage	immune
+Alasoo_mac_naive	possibly relevant	Alasoo_mac	macrophage	immune
+Alasoo_mac_SL	possibly relevant	Alasoo_mac	macrophage	immune
+blueprint_Tcell	possibly relevant	blueprint_tcell	Tcell	immune
+blueprint_mono	relevant	blueprint_mono	monocyte	immune
+blueprint_neut	possibly relevant	blueprint_neut	neutrophil	immune
+brainseq_brain	relevant	brainseq_brain	brain	immune
+CEDAR_Bcell	possibly relevant	CEDAR_Bcell	Bcell	immune
+CEDAR_ileum	not relevant	CEDAR_digestive	other	other
+CEDAR_mono	relevant	CEDAR_mono	monocyte	immune
+CEDAR_neut	possibly relevant	CEDAR_neut	neutrophil	immune
+CEDAR_platelet	not relevant	CEDAR_platelet	other	other
+CEDAR_rectum	not relevant	CEDAR_digestive	other	other
+CEDAR_CD4	possibly relevant	CEDAR_Tcell	Tcell	immune
+CEDAR_CD8	possibly relevant	CEDAR_Tcell	Tcell	immune
+CEDAR_colon	not relevant	CEDAR_digestive	other	other
+Fairfax_Bcell	possibly relevant	Fairfax_Bcell	Bcell	immune
+Fairfax_mono_IFN24	relevant	Fairfax_mono	monocyte	immune
+Fairfax_mono_LPS24	relevant	Fairfax_mono	monocyte	immune
+Fairfax_mono_LPS2	relevant	Fairfax_mono	monocyte	immune
+GENCORD_fib	not relevant	GENCORD_fib	other	other
+GENCORD_LCL	not relevant	GENCORD_LCL	other	other
+GENCORD_Tcell	possibly relevant	GENCORD_Tcell	Tcell	immune
+GEUVADIS_LCL	not relevant	GEUVADIS_LCL	other	other
+iPSC	not relevant	iPSC	other	other
+Lepik_blood	possibly relevant	Lepik_blood	blood	immune
+Nedelec_mac_List	possibly relevant	Nedelec_mac	macrophage	immune
+Nedelec_mac_naive	possibly relevant	Nedelec_mac	macrophage	immune
+Nedelec_mac_SL	possibly relevant	Nedelec_mac	macrophage	immune
+Quach_mono_IAV	relevant	Quach_mono	monocyte	immune
+Quach_mono_LPS	relevant	Quach_mono	monocyte	immune
+Quach_mono_naive	relevant	Quach_mono	monocyte	immune
+Quach_mono_Pam3CSK4	relevant	Quach_mono	monocyte	immune
+Quach_mono_R848	relevant	Quach_mono	monocyte	immune
+ROSMAP_brain	relevant	ROSMAP_brain	brain	brain
+Schmiedel_Bcell_naive	possibly relevant	Schmiedel_Bcell	Bcell	immune
+Schmiedel_CD4_anti-CD3-CD28	possibly relevant	Schmiedel_Tcell	Tcell	immune
+Schmiedel_CD4_naive	possibly relevant	Schmiedel_Tcell	Tcell	immune
+Schmiedel_CD8_anti-CD3-CD28	possibly relevant	Schmiedel_Tcell	Tcell	immune
+Schmiedel_CD8_naive	possibly relevant	Schmiedel_Tcell	Tcell	immune
+Schmiedel_mono_CD16_naive	relevant	Schmiedel_mono	monocyte	immune
+Schmiedel_mono_naive	relevant	Schmiedel_mono	monocyte	immune
+Schmiedel_NKcell_naive	possibly relevant	Schmiedel_Nkcell	NKcell	immune
+Schmiedel_Tfh_memory	possibly relevant	Schmiedel_Tcell	Tcell	immune
+Schmiedel_Th1-17_memory	possibly relevant	Schmiedel_Tcell	Tcell	immune
+Schmiedel_Th17_memory	possibly relevant	Schmiedel_Tcell	Tcell	immune
+Schmiedel_Th1_memory	possibly relevant	Schmiedel_Tcell	Tcell	immune
+Schmiedel_Th2_memory	possibly relevant	Schmiedel_Tcell	Tcell	immune
+Schmiedel_Treg_memory	possibly relevant	Schmiedel_Tcell	Tcell	immune
+Schmiedel_Treg_naive	possibly relevant	Schmiedel_Tcell	Tcell	immune
+sensory_neuron	not relevant	sensory_neuron	other	other
+TwinsUK_blood	possibly relevant	TwinsUK_blood	blood	immune
+TwinsUK_fat	not relevant	TwinsUK_fat	other	other
+TwinsUK_LCL	not relevant	TwinsUK_LCL	other	other
+TwinsUK_skin	not relevant	TwinsUK_skin	other	other
+pancreatic_islet	not relevant	pancreatic_islet	other	other
+gtex.adipose_sub	not relevant	gtex_other	other	other
+gtex.adipose_visc	not relevant	gtex_other	other	other
+gtex.adrenal	not relevant	gtex_other	other	other
+gtex.artery_aorta	not relevant	gtex_other	other	other
+gtex.artery_cor	not relevant	gtex_other	other	other
+gtex.artery_tibial	not relevant	gtex_other	other	other
+gtex.breast_mamm	not relevant	gtex_other	other	other
+gtex.cells_fib	not relevant	gtex_other	other	other
+gtex.cells_lcl	not relevant	gtex_other	other	other
+gtex.colon_sig	not relevant	gtex_other	other	other
+gtex.colon_trans	not relevant	gtex_other	other	other
+gtex.esoph_junction	not relevant	gtex_other	other	other
+gtex.esoph_mucosa	not relevant	gtex_other	other	other
+gtex.esoph_muscul	not relevant	gtex_other	other	other
+gtex.heart_atria	not relevant	gtex_other	other	other
+gtex.heart_ventr	not relevant	gtex_other	other	other
+gtex.liver	not relevant	gtex_other	other	other
+gtex.lung	not relevant	gtex_other	other	other
+gtex.muscle_skel	not relevant	gtex_other	other	other
+gtex.nerve_tibial	not relevant	gtex_other	other	other
+gtex.ovary	not relevant	gtex_other	other	other
+gtex.pancreas	not relevant	gtex_other	other	other
+gtex.pituitary	not relevant	gtex_other	other	other
+gtex.prostate	not relevant	gtex_other	other	other
+gtex.salivary_gland	not relevant	gtex_other	other	other
+gtex.skin_non_exp	not relevant	gtex_other	other	other
+gtex.skin_sun_exp	not relevant	gtex_other	other	other
+gtex.small_intest	not relevant	gtex_other	other	other
+gtex.spleen	not relevant	gtex_other	other	immune
+gtex.stomach	not relevant	gtex_other	other	other
+gtex.testis	not relevant	gtex_other	other	other
+gtex.thyroid	not relevant	gtex_other	other	other
+gtex.uterus	not relevant	gtex_other	other	other
+gtex.vagina	not relevant	gtex_other	other	other
+gtex.whole_blood	not relevant	gtex.whole_blood	blood	immune
+sensneur_eqtl	not relevant	sensory_neuron	other	other
+sensneur_sqtl	not relevant	sensory_neuron	other	other
+gtex.brain_acc	gtex relevant	gtex_brain	brain	brain
+gtex.brain_amyg	gtex relevant	gtex_brain	brain	brain
+gtex.brain_basal	gtex relevant	gtex_brain	brain	brain
+gtex.brain_cereb	gtex relevant	gtex_brain	brain	brain
+gtex.brain_cereb_hem	gtex relevant	gtex_brain	brain	brain
+gtex.brain_cortex	gtex relevant	gtex_brain	brain	brain
+gtex.brain_frontal	gtex relevant	gtex_brain	brain	brain
+gtex.brain_hippo	gtex relevant	gtex_brain	brain	brain
+gtex.brain_hypot	gtex relevant	gtex_brain	brain	brain
+gtex.brain_nuc_acc	gtex relevant	gtex_brain	brain	brain
+gtex.brain_putamen	gtex relevant	gtex_brain	brain	brain
+gtex.brain_spinal	gtex relevant	gtex_brain	brain	brain
+gtex.brain_sub_nig	gtex relevant	gtex_brain	brain	brain
