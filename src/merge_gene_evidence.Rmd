@@ -228,6 +228,18 @@ print("colocScore:")
 summary(merged.df$colocScore)
 print("maxH4:")
 summary(merged.df$colocMaxH4)
+print("Num genes colocScore >= 0.8:")
+sum(merged.df$colocScore >= 0.8)
+print("Num genes maxH4 >= 0.8:")
+sum(merged.df$colocMaxH4 >= 0.8)
+
+locusColocScores.df = merged.df %>% group_by(locus) %>% summarise(numColocs = sum(colocScore >= 0.8))
+print("Num loci with a gene having colocScore >= 0.8:")
+sum(locusColocScores.df$numColocs > 0)
+
+locusMaxH4.df = merged.df %>% group_by(locus) %>% summarise(numColocs = sum(colocMaxH4 >= 0.8))
+print("Num loci with a gene having maxH4 >= 0.8:")
+sum(locusMaxH4.df$numColocs > 0)
 ```
 
 ColocScore and maxH4 are highly correlated. On average maxH4 is slightly higher.
