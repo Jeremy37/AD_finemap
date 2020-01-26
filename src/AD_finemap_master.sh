@@ -89,24 +89,6 @@ for filepath in "${chr_paths[@]}"; do
   --out gcta/output_5e-8/AD.IGAP1_GWAX.$chr"
 done
 
-# For PLCG2, do a special run with a threshold of 2e-5 to capture the missense causal SNP
-mkdir gcta/output_2e-5
-for filepath in gcta/input/ukbb_sample.16.merged.bed; do
-  echo "$filepath"
-  filename=$(basename "$filepath") # filename like ukbb_sample.1.156156033_166156033.bed
-  filepath_no_ext="${filepath%.*}"
-  chr=`echo $filename | perl -ne '@Ar=split(/\./); print $Ar[1];'`
-  
-  submitJobs.py --MEM 2000 -q normal -j gcta.2e-5.$chr \
-    -c "gcta64 \
-  --bfile $filepath_no_ext \
-  --chr $chr \
-  --cojo-file gcta/input/AD.IGAP1_GWAX.$chr.ma \
-  --cojo-slct \
-  --cojo-p 2e-5 \
-  --out gcta/output_2e-5/AD.IGAP1_GWAX.$chr"
-done
-
 grep "Successfully" FarmOut/gcta*.txt | wc -l
 grep -iP "Fail|ERROR|Abort|exit code" FarmOut/gcta*.txt | wc -l
 
@@ -119,12 +101,11 @@ python $SRC/get_gcta_output_loci.py --gcta_dir gcta/output_1e-5 --pthresh 5e-8 -
 # are in partial LD
 python $SRC/get_gcta_output_loci.py --gcta_dir gcta/output_1e-5 --pthresh 1e-5 --window 620000 --out AD.IGAP1_GWAX.1e-5_indep.hits
 python $SRC/get_gcta_output_loci.py --gcta_dir gcta/output_5e-8 --pthresh 5e-8 --out AD.IGAP1_GWAX.APOE_HLA.hits
-python $SRC/get_gcta_output_loci.py --gcta_dir gcta/output_2e-5 --pthresh 2e-5 --out AD.IGAP1_GWAX.PLCG2_indep.hits
 
 cp AD.IGAP1_GWAX.1e-5_indep.hits AD.loci.tsv
 cp AD.IGAP1_GWAX.1e-5_indep.hits AD.loci.1e-5.tsv
 ## NOTE: I manually edited these files to add in locus names based on
-# nearby genes, and to incorporate the update to the HLA, APOE, and PLCG2 loci.
+# nearby genes, and to incorporate the update to the HLA, APOE loci.
 # I removed the loci with lead p < 5e-8 from the AD.loci.tsv file. It's important
 # that this starts with info from the "1e-5" file, except for these loci, since
 # that will include secondary signals. 
@@ -727,8 +708,7 @@ primary_cond_signal_files=( $GCTA_OUT/ABCA7.cond.out.rs12151021_A_G.flt.tsv \
                             $GCTA_OUT/EPHA1.cond.out.rs12703526_G_T.flt.tsv \
                             $GCTA_OUT/NCK2.cond.out.rs143080277_T_C.flt.tsv \
                             $GCTA_OUT/PTK2B-CLU.cond.out.rs867230_C_A.flt.tsv \
-                            $GCTA_OUT/TREM2.cond.out.rs187370608_G_A.flt.tsv \
-                            gcta/output_2e-5/cond/PLCG2.cond.out.rs12444183_A_G.flt.tsv )
+                            $GCTA_OUT/TREM2.cond.out.rs187370608_G_A.flt.tsv )
 
 # Cols of GCTA *.flt.tsv files:
 # Chr	SNP	bp	refA	freq	b	se	p	n	freq_geno	bC	bC_se	pC
@@ -750,8 +730,7 @@ secondary_cond_signal_files=( $GCTA_OUT/ABCA7.cond.out.rs4147918_A_G.flt.tsv \
                               $GCTA_OUT/EPHA1.cond.out.rs10265814_C_G.flt.tsv \
                               $GCTA_OUT/NCK2.cond.out.rs116038905_T_C.flt.tsv \
                               $GCTA_OUT/PTK2B-CLU.cond.out.rs73223431_C_T.flt.tsv \
-                              $GCTA_OUT/TREM2.cond.out.rs3857580_A_G.flt.tsv \
-                              gcta/output_2e-5/cond/PLCG2.cond.out.rs72824905_C_G.flt.tsv )
+                              $GCTA_OUT/TREM2.cond.out.rs3857580_A_G.flt.tsv )
                               
  (echo -e "SNP\tCHR\tBP\tA1\tMAF\tMETA_P\tMETA_BETA\tOR\tlog_OR\tMETA_SE\tz_score\ttrait\tPMID\tused_file";
  (for FILE in "${secondary_cond_signal_files[@]}"; do
