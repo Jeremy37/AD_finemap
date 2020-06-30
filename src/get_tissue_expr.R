@@ -4,7 +4,7 @@
 library(tidyverse)
 
 root = ".."
-outdir = "./reference"
+outdir = "./expression"
 combined.df = NULL
 
 getTPMs = function(counts, gene_lengths) {
@@ -135,7 +135,7 @@ subset.df = combined.df %>%
   select(ensgene, symbol, `HipSci iPSC`, iNeuron, NPC, neuron, primary_microglia, ipsc_microglia,
          `BLUEPRINT monocyte`, `Alasoo_2018 macrophage_naive`, `Alasoo_2018 macrophage_IFNg`,
          ROSMAP_brain = `ROSMAP brain_naive`, `BrainSeq brain`, GTEx_hippocampus=`Brain - Hippocampus`,
-         `Brain - Cerebellum`, `Brain - Cortex`, `Whole Blood`, `Cells - EBV-transformed lymphocytes`)
+         `Brain - Cerebellum`, `Brain - Cortex`, `Whole Blood`)
 gzf = gzfile(file.path(outdir, "tissues.selected.tpm.tsv.gz"), "w")
 write.table(subset.df, file=gzf, row.names=F, col.names=T, quote=F, sep="\t", na="")
 close(gzf)

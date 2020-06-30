@@ -11,17 +11,43 @@
 ROOT=/path/to/AD_finemap
 SRC=$ROOT/src
 GWAS_NAME=AD.meta
+JS=/lustre/scratch115/realdata/mdt3/projects/otcoregen2/jeremys
+ROOT=$JS/AD_finemap
+SRC=$ROOT/src
+GWAS_NAME=AD.meta
+
 cd $ROOT
 
+###############################################################################
+# Summary stats
 # Download summary stat files
+md() {
+	mkdir -p "$1" && cd "$1"
+}
 md summary_stats
 wget https://zenodo.org/record/3531493/files/AD.proxy_exclude_firsts.bgen.stats.gz
 wget https://zenodo.org/record/3531493/files/AD.IGAP1_GWAX_exclude_firsts_v5.meta.gz
 zcat AD.IGAP1_GWAX_exclude_firsts_v5.meta.gz | tr ' ' '\t' | sort -k1,1n -k2,2n | bgzip > AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz
 tabix -S 1 -s 1 -b 2 -e 2 AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz
 rm AD.IGAP1_GWAX_exclude_firsts_v5.meta.gz
-cd $ROOT
 
+# Make a summary stats file formatted for GWAS catalog. GWAS catalog validator
+# only likes rsIDs, so we have to set our indel IDs to NA.
+(echo -e "variant_id\tp_value\tchromosome\tbase_pair_location\teffect_allele\tother_allele\teffect_allele_frequency\tbeta\tstandard_error\tSNP_ID\tGWAS_BETA\tGWAS_SE\tGWAS_P\tGWAX_UKBB_BETA\tGWAX_UKBB_SE\tGWAX_UKBB_P\tDIRECT\tI2\tHET_P\tINFO";
+ zcat AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | sed '1d' | awk 'BEGIN{OFS="\t"}{rsid=$3; pval=$14; if ($3 !~ /^rs/) { rsid="NA" } if ($14 !~ /nan/) { print rsid,$14,$1,$2,$4,$5,$18,$12,$13,$3,$6,$7,$8,$9,$10,$11,$15,$16,$17,$19} }') \
+ | head -n 200 > AD.IGAP1_GWAX_exclude_firsts_v5.meta.gwas_catalog.tsv.head
+
+(echo -e "variant_id\tp_value\tchromosome\tbase_pair_location\teffect_allele\tother_allele\teffect_allele_frequency\tbeta\tstandard_error\tSNP_ID\tGWAS_BETA\tGWAS_SE\tGWAS_P\tGWAX_UKBB_BETA\tGWAX_UKBB_SE\tGWAX_UKBB_P\tDIRECT\tI2\tHET_P\tINFO";
+ zcat AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | sed '1d' | awk 'BEGIN{OFS="\t"}{rsid=$3; pval=$14; if ($3 !~ /^rs/) { rsid="NA" } if ($14 !~ /nan/) { print rsid,$14,$1,$2,$4,$5,$18,$12,$13,$3,$6,$7,$8,$9,$10,$11,$15,$16,$17,$19} }') \
+ | gzip > AD.IGAP1_GWAX_exclude_firsts_v5.meta.gwas_catalog.tsv.gz
+md5sum AD.IGAP1_GWAX_exclude_firsts_v5.meta.gwas_catalog.tsv.gz > AD.IGAP1_GWAX_exclude_firsts_v5.meta.gwas_catalog.tsv.gz.md5sum
+
+#pip3 install ss-validate
+ss-validate -f AD.IGAP1_GWAX_exclude_firsts_v5.meta.gwas_catalog.tsv.gz --logfile AD.IGAP1_GWAX_exclude_firsts_v5.meta.gwas_catalog.tsv.validate.log
+
+
+
+###############################################################################
 # Note that a few UK Biobank files were used but are not provided for download.
 # These are:
 # gcta/input/ukbb_sample_regions/ukbb_sample.<region>.bim/bed/fam - PLINK files with genotype counts for 10k randomly sampled UKB individuals used for LD
@@ -34,8 +60,8 @@ cd $ROOT
 # gcta/input/ukbb_sample_regions needs to be a folder with plink files for UKBB
 # sample data around independent AD signals
 
-md gcta/output_1e-5
 cd $ROOT
+mkdir gcta/output_1e-5
 
 # Merge together plink bed files on the same chromosome.
 # NOTE: these UK biobank files are not provided here
@@ -109,6 +135,9 @@ cp AD.IGAP1_GWAX.1e-5_indep.hits AD.loci.1e-5.tsv
 # I removed the loci with lead p < 5e-8 from the AD.loci.tsv file. It's important
 # that this starts with info from the "1e-5" file, except for these loci, since
 # that will include secondary signals. 
+# Because APOE p values are so small (reported as zero), we set the lead SNP to
+# the one with the lowest p value (rs429358_T_C) in the independent studies
+# (Kunkle and GWAX), which is the same SNP in both.
 
 # Extract SNP IDs for all loci with p < 1e-5, then look these up in the meta-analysis
 # with IGAP stage2 to see if any are genome-wide significant.
@@ -296,7 +325,6 @@ Rscript $SRC/aggregateColumn.R --file genes/AD.loci.1Mb_window.gene_overlaps.pc.
 Rscript $SRC/aggregateColumn.R --file genes/AD.loci.200kb_window.gene_overlaps.all.tsv --groupby leadSNP --aggregate symbol > genes/AD.loci.200kb_window.gene_overlaps.aggregated.all.tsv
 Rscript $SRC/aggregateColumn.R --file genes/AD.loci.1Mb_window.gene_overlaps.all.tsv --groupby leadSNP --aggregate symbol > genes/AD.loci.1Mb_window.gene_overlaps.aggregated.all.tsv
 
-
 # Add nearby gene names to lead SNPs file
 Rscript $SRC/annotateRegionGenes.R AD.loci.tsv \
                                    genes/AD.loci.nearest_gene.pc.tsv \
@@ -310,10 +338,28 @@ Rscript $SRC/annotateRegionGenes.R AD.loci.tsv \
                                    genes/AD.loci.1Mb_window.gene_overlaps.aggregated.all.tsv \
                                    > genes/AD.loci.gene_overlaps.all.tsv
 
+
+################################################################################
+# Annotate gene expression across tissues / cell types
+
+mkdir expression
+
 # Get a single tab-separated file with TPM expression of genes across multiple tissues
 # NOTE that these datasets are not all provided
 # Produces files reference/tissues.combined.tpm.tsv.gz and reference/tissues.selected.tpm.tsv.gz
 Rscript $SRC/get_tissue_expr.R
+
+# Prepare single-cell data from Allen Brain institute, based on paper
+# Hodge, R.D., et al. (2019). "Conserved cell types with divergent features in human versus mouse cortex." Nature 573:61-68.
+# First put ~4 Gb file "transcrip.tome" and sample_annotations.csv into expression directory.
+cd expression
+submitJobs.py --MEM 16000 -j get_brain_singlecell_test -q yesterday \
+  -c "Rscript $SRC/get_allen_brain_cortex_data.R"
+
+# Convert the expression TPM files to expression percentile for each gene relative
+# to all other tissues / cell types.
+Rscript $SRC/get_relative_expr.R
+
 
 Rscript $SRC/annotateRegionGeneExpr.R genes/AD.loci.1Mb_window.genedist.pc.tsv \
                                       reference/tissues.selected.tpm.tsv.gz \
@@ -383,7 +429,6 @@ gzip annotated/$GWAS_NAME.vep_output.tsv
 
 # Use CrossMap to get GRCh38 coords for SNPs. Output to *.GRCh38.bed (works on farm3)
 # May need to set path to include CrossMap
-CHAIN_FILE=$JS/software/CrossMap/GRCh37_to_GRCh38.chain.gz
 CHAIN_FILE=/path/to/GRCh37_to_GRCh38.chain.gz
 zcat summary_stats/$GWAS_NAME.assoc_loci.gz | sed '1d' | awk 'BEGIN{OFS="\t"}{print $1,$2,$2+1,$3}' > $GWAS_NAME.assoc_loci.bed
 CrossMap.py bed $CHAIN_FILE $GWAS_NAME.assoc_loci.bed annotated/$GWAS_NAME.assoc_loci.GRCh38.bed
@@ -581,16 +626,6 @@ done
 grep "Successfully" FarmOut/run_paintor_cred_nc2*txt | wc -l
 grep -iP "Fail|ERROR|Abort|exit code|TERM_" FarmOut/run_paintor_cred_nc2*txt | wc -l
 
-# mkdir paintor_cred/out_single_annotations_nc3
-# ANNOTATIONS=( intronic upstream_gene downstream_gene regulatory_region non_coding_transcript_exon three_prime_UTR missense synonymous five_prime_UTR TF_binding_site stop_gained frameshift inframe_insertion inframe_deletion start_lost coding_nonsyn UTR exonic regulatory gene_proximal spliceai_gt_0 spliceai_gt_0.01 spliceai_gt_0.1 deepSEA_lt_0.1 deepSEA_lt_0.05 deepSEA_lt_0.01 captureSeqSpliceDist_lt_10 CADD_PHRED_gt_5 CADD_PHRED_gt_10 CADD_PHRED_gt_20 microglia ipsMacrophage microglia_or_macrophage_atac DNase DNase_gteq10 Brain_DNase Blood_Immune_DNase Roadmap_Enh Roadmap_Enh_gteq10 Brain_Enh Blood_Immune_Enh )
-# for ann in "${ANNOTATIONS[@]}"; do
-#   if [ ! -d "paintor_cred/out_single_annotations_nc3/$ann" ]; then
-#     mkdir -p paintor_cred/out_single_annotations_nc3/$ann
-#   fi
-#   submitJobs.py --MEM 500 -j run_paintor_cred_nc3.$ann -q normal \
-#     -c "bash $SRC/run_paintor.sh paintor_cred/input/ paintor_cred/out_single_annotations_nc3/$ann 3 $ann"
-# done
-
 cat paintor_cred/out_single_annotations_nc1/*/*.Values > paintor_cred/out_single_annotations_nc1/out_single_annotations_nc1.enrichments.txt
 cat paintor_cred/out_single_annotations_nc2/*/*.Values > paintor_cred/out_single_annotations_nc2/out_single_annotations_nc2.enrichments.txt
 grep "" $ROOT/paintor_cred/out_single_annotations_nc1/*/Log.BayesFactor | sed 's/\.\///g' | sed 's/\/Log.BayesFactor:/\t/g' | sed 's/.*\///g' > $ROOT/paintor_cred/out_single_annotations_nc1/out_single_annotations_nc1.LogBayesFactor.txt
@@ -600,8 +635,8 @@ grep "" $ROOT/paintor_cred/out_single_annotations_nc2/*/Log.BayesFactor | sed 's
 ################# MODEL 2
 # Select the Blood_Immune_DNase annotation, and run PAINTOR again with this
 # annotation plus each other annotation individually.
-md paintor_cred/out_nc2/model2
 cd $ROOT
+mkdir paintor_cred/out_nc2/model2
 ANNOTATIONS=( intronic upstream_gene downstream_gene regulatory_region non_coding_transcript_exon three_prime_UTR missense synonymous five_prime_UTR TF_binding_site coding_nonsyn UTR exonic regulatory gene_proximal phastCons_gt_0.1 phastCons_gt_0.5 phastCons_gt_0.95 phyloP_gt_0.5 phyloP_gt_1 phyloP_gt_2 GERP_gt_1 GERP_gt_2 GERP_gt_3 spliceai_gt_0 spliceai_gt_0.01 spliceai_gt_0.1 deepSEA_lt_0.1 deepSEA_lt_0.05 deepSEA_lt_0.01 captureSeqSpliceDist_lt_10 CADD_PHRED_gt_5 CADD_PHRED_gt_10 CADD_PHRED_gt_20 microglia ipsMacrophage microglia_or_macrophage_atac DNase DNase_gteq10 Brain_DNase Roadmap_Enh Roadmap_Enh_gteq10 Brain_Enh Blood_Immune_Enh )
 #ANNOTATIONS=( deepSEA_lt_0.05 )
 for ann in "${ANNOTATIONS[@]}"; do
@@ -672,7 +707,6 @@ diff <(cut -f 1-24,30-107 annotated/$GWAS_NAME.annotated.selected.probable.tsv) 
 
 # When redoing the annotation, add back in the handmade notes we had added
 Rscript $SRC/merge_previous_annotated_table.R
-
 
 
 ################################################################################
@@ -762,7 +796,6 @@ $SRC/coloc/prepare_qtl_data.sh
 $SRC/coloc/run_coloc.sh
 ################################################################################
 
-
 # Merge all coloc results in to "*.coloc_details.txt" file, and add a column
 # with top colocs to the main annotated SNP file (only lead SNPs have details
 # of colocs added in). Also, fix any columns that were corrupted by being treated
@@ -772,18 +805,27 @@ Rscript $SRC/coloc/annotate.coloc.R $ROOT coloc.AD.meta $ROOT/annotated/$GWAS_NA
 
 Rscript $SRC/coloc/get_coloc_score.R $ROOT/coloc/output/coloc.AD.meta.eqtl_sqtl_colocs.txt $ROOT/coloc/dataset_groups.tsv $ROOT/coloc/coloc_group_weights.tsv $ROOT/coloc/coloc.AD.meta
 
-# Make some lists of coloc genes to use in network analyses
+# Make some lists of coloc genes to use in network analyses and downstream
+# gene scores
 Rscript $SRC/coloc/filter_coloc_genes.R
 
 
 ################################################################################
 # NETWORK analyses
 
+# Get seed genes for network analysis
+Rscript $SRC/merge_seed_gene_sets.R $ROOT/genes/literature_genes.tsv $ROOT/genes/AD.loci.nearest_gene.pc.tsv \
+        $ROOT/coloc/output/coloc.AD.meta.merged_cond.H4_gt_0.5.all.tsv $ROOT/network/network_genes.txt \
+    > $ROOT/network/AD.network_seed_genes.tsv
+    
+# Inigo ran the network propagation steps and permutations, and the results are
+# in the file network/Zsco_node_TSPOAP1_1000ite.csv
+
 # Run manually. Part of this needs to be run first, and then the below code,
 # before running network_analysis.Rmd completely.
 $SRC/network_analysis.Rmd
 
-# This output top lists of network-connected genes. We want to see if these are
+# This outputs top lists of network-connected genes. We want to see if these are
 # enriched in nearby low p-value SNPs.
 zcat summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | sed '1d' | awk 'BEGIN{OFS="\t"}{print $1,$2,$2+1,$3,$14}' | gzip > summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.bed.gz
 
@@ -792,12 +834,31 @@ bedtools intersect -a network/ad_network.all.10kb_window.bed -b summary_stats/AD
 
 
 ################################################################################
+# Run fgwas to get genome-wide enrichments
+# Manually run lines in the following files
+
+$SRC/run_fgwas.sh
+$SRC/plot_fgwas_enrichments.Rmd
+
+# Gene expression can annotate any gene in the genome, and we can use this later
+# on to prioritise genes. We've just gotten relative gene expression for single-cell
+# brain cell types, and for microglia and other tissues relative to GTEx. Here we
+# annotate these datasets with the minimum GWAS p value for SNPs within 10 kb.
+
+# Use the bed file of SNP positions an p values defined above
+#zcat summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | sed '1d' | awk 'BEGIN{OFS="\t"}{print $1,$2,$2+1,$3,$14}' | gzip > summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.bed.gz
+
+# Get bed files of 10 kb window around all GRCh37 genes
+Rscript $SRC/get_genes_bed.R
+(echo -e "chr\tgene_window_start\tgene_window_end\tgene_id\tsnp_chr\tsnp_pos\tsnp_end\tsnp_id\tpvalue"; 
+ bedtools intersect -a genes/genes.pc.10kb_window.grch37.bed -b summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.bed.gz -wa -wb -loj) | gzip > genes/genes.pc.10kb_window.snp_overlaps.tsv.gz
+
+
+################################################################################
 # Locus gene rankings
 
 # Run manually
 merge_gene_evidence.Rmd
-
-zcat summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | cut -f 1-3,14 | bgzip > summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.col_subset.tsv.bgz
 
 
 ################################################################################
@@ -818,32 +879,49 @@ $SRC/paintor_plots.Rmd
 # Figure 4 - run steps in; multiple output files put together
 $SRC/finemapping_plots.R
 
-# Figure 5 - run the below. Output file genes/score.breakdown.topGenes.v5.6x5.bars.pdf
+# Figure 5 - produced by merge_gene_evidence.Rmd and plot_fgwas_enrichments.Rmd
+# Output files:
+# expression/sc_brain.expression_enrichment.pdf
+# genes/network_score.minp_enrichment.pdf
 $SRC/merge_gene_evidence.Rmd
+$SRC/plot_fgwas_enrichments.Rmd
 
-# SuppFig 1 - from merge_gene_evidence.Rmd
+# Figure 6 - run the below. Output file:
+# genes/score.breakdown.topGenes.v5.6x5.bars.pdf
+$SRC/plot_gene_evidence.Rmd
+
+# SuppFig 1 - Files from merge_gene_evidence.Rmd and plot_fgwas_enrichments.Rmd
+# network/network.fgwas_enrichment.pdf
+# genes/network.seed_gene_pagerank_pctile.1mb.pdf
+# genes/network.seed_gene.violin.pdf
+
 # SuppFig 2 - from merge_gene_evidence.Rmd
+# expression/bulk.fgwas_enrichment.pdf
+
 # SuppFig 3 - from merge_gene_evidence.Rmd
+# genes/coloc.H4.boxplot.network.pdf
+# genes/coloc.H4.boxplot.totalScore.pdf
+# genes/coloc.celltype_vs_totalscore.pdf
+
 # SuppFig 4 - from merge_gene_evidence.exprScore.Rmd
+# genes/geneDistScore.pdf
 
 # Supp Table 1 - made from file genes/AD.loci.gene_overlaps.pc.tsv, output by annotateRegionGenes.R
 # Supp Table 2 - QTL datasets - prepared manually
 # Supp Table 3 - QTL coloc summary - file coloc/output/coloc.AD.meta.all_colocs.supp_table.txt, output by annotate.coloc.R
 # Supp Table 4 - all QTL colocs - file annotated/AD.meta.annotated.coloc_details.txt, output by annotate.coloc.R
-# Supp Table 5 - genes for evaluating coloc - file genes/AD.loci.1Mb_window.coloc_vs_maxH4.tsv, output by merge_gene_evidence.Rmd
-# Supp Table 6 - PAINTOR annotations - file paintor_cred/paintor_annotation_summary.tsv, output by paintor_plots.Rmd
+# Supp Table 5 - PAINTOR annotations - file paintor_cred/paintor_annotation_summary.tsv, output by paintor_plots.Rmd
 
-find /lustre/scratch115/realdata/mdt3/projects/otcoregen2/jeremys/AD_finemap/src -name '*.Rmd' -print0 | xargs -r0 grep -H 'supp_table'
-
-
-# Supp Table 7 - SNP fine-mapping
+# Supp Table 6 - SNP fine-mapping
 # We include a subset of the columns, as many contain information not used / not interesting
 cat $ROOT/annotated/$GWAS_NAME.annotated.selected.probable.paintor.with_notes.tsv \
   | awk 'BEGIN{FS="\t";OFS="\t"}{print $2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$75,$16,$17,$73,$18,$19,$74,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$38,$39,$40,$41,$43,$44,$45,$46,$47,$55,$57,$58,$59,$64,$65,$66,$67,$68,$69,$70,$102,$103,$104,$105,$106,$107,$108,$109,$110,$111}' \
   > $ROOT/annotated/$GWAS_NAME.annotated.forSuppTable.tsv
 
-# Supp Table 8 - Network seed genes - prepared manually
-# Supp Table 9 - Network gene rankings - file network/network.annotated.all.supp_table.tsv, output by network_analysis.Rmd
-# Supp Table 10 - Network gene GO terms - file network/network.PRpctile.top1000.gprofiler.tsv, output by network_analysis.Rmd
+# Supp Table 7 - Network seed genes - prepared manually
+# Supp Table 8 - Network gene rankings - file network/network.annotated.all.supp_table.tsv, output by network_analysis.Rmd
+# Supp Table 9 - Network gene GO terms - file network/network.PRpctile.top1000.gprofiler.tsv, output by network_analysis.Rmd
+# Supp Table 10 - Genome-wide enrichments - file 
 # Supp Table 11 - Gene evidence rankings - file genes/AD.loci.1Mb_window.expressed_genes.all.geneScores.rounded.tsv, output by merge_gene_evidence.Rmd
+# Supp Table 12 - Glmnet models - output by merge_gene_evidence.Rmd
 

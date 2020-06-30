@@ -1,0 +1,242 @@
+---
+title: "Gene expression for enrichment analyses"
+output: html_document
+---
+
+This script converts gene expression values to quantiles within each column, treating NA values as zeroes. We subset to genes present in the gene network file, and use chr:pos coordinates from there.
+
+For each gene, we then determine the quantile of each tissue's expression relative to other tissues. Subsequent to this script, we then use these expression quantiles to determine enrichment of AD SNPs in/near genes that have their highest expression in specific tissues.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+library(tidyverse)
+library(pheatmap)
+
+#args <- commandArgs(trailingOnly = TRUE)
+#exprFileSingleCell = args[1] # brain_cell_type_tpm.tsv.gz
+#exprFileBulk = args[2] # tissues.combined.tpm.tsv.gz
+#networkFile = args[3] # ad_network.all.bed
+ad_dir = "/Users/jeremys/work/opentargets/AD_finemap"
+exprFileSingleCell = file.path(ad_dir, "expression/brain_cell_type_tpm.tsv.gz")
+exprFileBulk = file.path(ad_dir, "expression/tissues.combined.tpm.tsv.gz")
+networkFile = file.path(ad_dir, "network/ad_network.all.bed")
+
+network.df = read_tsv(networkFile, col_names = c("chr", "start", "end", "gene_id", "page.rank.pctile"), guess_max = 1e5) %>%
+  filter(!grepl("PATCH", chr))
+
+getExprNorm = function(expr.df, network.df) {
+  # The first two columns of the expression table should be gene_id and symbol,
+  # and the remaining columns are any kind of gene expression quantification.
+  expr.df = expr.df %>%
+    inner_join(network.df %>% select(-page.rank.pctile), by="gene_id") %>%
+    select(gene_id, symbol, chr, start, end, everything())
+  
+  expr.mat = expr.df[, -(1:5)]
+  expr.mat[is.na(expr.mat)] = 0
+  N = nrow(expr.mat)
+  expr.norm = apply(expr.mat, MARGIN=2, FUN=function(x) rank(x, ties.method="average") / N)
+  cbind(expr.df[, 1:5], expr.norm)
+}
+
+expr.sc.df = read_tsv(exprFileSingleCell) %>%
+  rename(symbol = hgnc_symbol) %>%
+  select(-Exclude, -VLMC) # Remove "exclude" cell type, and VLMC which has too few cells
+expr.sc.norm = getExprNorm(expr.sc.df, network.df)
+colnames(expr.sc.norm) = gsub(" |/", "_", colnames(expr.sc.norm))
+
+expr.bulk.df = read_tsv(exprFileBulk) %>% rename(gene_id = ensgene)
+expr.bulk.norm = getExprNorm(expr.bulk.df, network.df)
+colnames(expr.bulk.norm) = gsub(" - ", "_", colnames(expr.bulk.norm))
+colnames(expr.bulk.norm) = gsub(" \\(", "_", colnames(expr.bulk.norm))
+colnames(expr.bulk.norm) = gsub(" |/|\\+|\\-", "_", colnames(expr.bulk.norm))
+colnames(expr.bulk.norm) = gsub("\\)", "", colnames(expr.bulk.norm))
+```
+
+First let's see a heatmap of expression correlations between all tissues.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=10, fig.height=8.5}
+# To decide which tissues to include, let's look at some heatmaps of
+# tissue correlations
+#pdf("bulk_rnaseq_tissue_cor.all.pdf", width=10, height=9)
+expr_cor = cor(expr.bulk.norm[, -(1:5)])
+pheatmap(expr_cor, cluster_cols = T, cluster_rows = T, treeheight_col = 30,
+         show_colnames = F, fontsize = 6, main = "Bulk RNA-seq tissue correlations")
+#dev.off()
+```
+
+There are substantial batch effects even after quantile normalising within each tissue. This suggests to me that we need to look at each main dataset separately (eQTL catalogue, GTEx).
+
+We can look at this for just GTEx tissues.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+gtex_first = which(colnames(expr_cor) == "Adipose_Subcutaneous")
+gtex_last = which(colnames(expr_cor) == "Whole_Blood")
+
+#pdf("bulk_rnaseq_tissue_cor.gtex.pdf", width=10, height=9)
+pheatmap(expr_cor[gtex_first:gtex_last, gtex_first:gtex_last], cluster_cols = T, cluster_rows = T, treeheight_col = 30,
+         show_colnames = F, fontsize = 6, main = "Bulk RNA-seq tissue correlations")
+#dev.off()
+```
+
+Since there are so many brain regions represented, we select just a few of these which are the most transcriptionally distinct and relevant:
+
+- cortex
+- cerebellum
+- hippocampus
+- substantia nigra
+
+We determine the quantile of expression for each tissue relative to all others, and save this file. We do this separately for GTEx (plus microglia and 3 iPSC-derived cell types), as well as for the eQTL catalogue (plus microglia and 3 iPSC-derived cell types).
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+#colnames(expr.bulk.norm)
+gtex_cols = colnames(expr.bulk.norm %>% select(Adipose_Subcutaneous:Whole_Blood))
+gtex_selected_cols = colnames(expr.bulk.norm %>% select(Adipose_Subcutaneous:Whole_Blood, -starts_with("Brain"), Brain_Cerebellum, Brain_Cortex, Brain_Hippocampus, Brain_Substantia_nigra))
+expr.bulk.gtex = expr.bulk.norm %>% select(gene_id:end, iNeuron, neuron, primary_microglia, ipsc_microglia, one_of(gtex_selected_cols))
+write_tsv(expr.bulk.gtex, path=file.path(ad_dir, "fgwas/expr.bulk.gtex.norm.tsv.gz"))
+
+# Make a file which has 1/0 for whether the tissue has expression > 80th pctile
+expr_gt_80 = ((expr.bulk.gtex %>% select(-chr, -start, -end, -gene_id, -symbol) > 0.80) * 1) %>% as_tibble()
+expr.bulk.norm.gt_80 = bind_cols(expr.bulk.gtex %>% select(chr, start, end, gene_id), expr_gt_80)
+write_tsv(expr.bulk.norm.gt_80 %>% arrange(chr, start),
+          path=file.path(ad_dir, "fgwas/expr.bulk.gtex.norm.gt_80.bed.gz"), col_names = F)
+
+expr_gt_90 = ((expr.bulk.gtex %>% select(-chr, -start, -end, -gene_id, -symbol) > 0.90) * 1) %>% as_tibble()
+expr.bulk.norm.gt_90 = bind_cols(expr.bulk.gtex %>% select(chr, start, end, gene_id), expr_gt_90)
+write_tsv(expr.bulk.norm.gt_90 %>% arrange(chr, start),
+          path=file.path(ad_dir, "fgwas/expr.bulk.gtex.norm.gt_90.bed.gz"), col_names = F)
+
+############### Relative expression
+N = ncol(expr.bulk.gtex) - 5
+expr.bulk.relative = t(apply(expr.bulk.gtex %>% select(-gene_id:-end), MARGIN=1, FUN=function(x) rank(x) / N * 100))
+expr.bulk.relative = cbind(expr.bulk.norm %>% select(gene_id:end), expr.bulk.relative)
+write_tsv(expr.bulk.relative, path=file.path(ad_dir, "fgwas/expr.bulk.gtex.relative.tsv.gz"))
+
+# Make a file which has 1/0 for whether the tissue has expression > 80th pctile
+expr_gt_80 = ((expr.bulk.relative %>% select(-chr, -start, -end, -gene_id, -symbol) > 80) * 1) %>% as_tibble()
+expr.bulk.relative.gt_80 = bind_cols(expr.bulk.relative %>% select(chr, start, end, gene_id), expr_gt_80)
+write_tsv(expr.bulk.relative.gt_80 %>% arrange(chr, start),
+          path=file.path(ad_dir, "fgwas/expr.bulk.gtex.relative.gt_80.bed.gz"), col_names = F)
+
+expr_gt_90 = ((expr.bulk.relative %>% select(-chr, -start, -end, -gene_id, -symbol) > 90) * 1) %>% as_tibble()
+expr.bulk.relative.gt_90 = bind_cols(expr.bulk.relative %>% select(chr, start, end, gene_id), expr_gt_90)
+write_tsv(expr.bulk.relative.gt_90 %>% arrange(chr, start),
+          path=file.path(ad_dir, "fgwas/expr.bulk.gtex.relative.gt_90.bed.gz"), col_names = F)
+
+gt_80_colnames = paste0(paste0(colnames(expr.bulk.relative.gt_80 %>% select(-chr, -start, -end, -gene_id)), "_gt_80"), collapse = "\t")
+write_lines(gt_80_colnames, path=file.path(ad_dir, "fgwas/expr.bulk.gtex.relative.gt_80.colnames.tsv"))
+gt_90_colnames = paste0(paste0(colnames(expr.bulk.relative.gt_90 %>% select(-chr, -start, -end, -gene_id)), "_gt_90"), collapse = "\t")
+write_lines(gt_90_colnames, path=file.path(ad_dir, "fgwas/expr.bulk.gtex.relative.gt_90.colnames.tsv"))
+```
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+expr.bulk.eqtl_catalogue = expr.bulk.norm %>% select(gene_id:end, iNeuron, neuron, primary_microglia, ipsc_microglia, everything(), -one_of(gtex_cols))
+
+N = ncol(expr.bulk.eqtl_catalogue) - 5
+expr.bulk.relative = t(apply(expr.bulk.eqtl_catalogue %>% select(-gene_id:-end), MARGIN=1, FUN=function(x) rank(x) / N * 100))
+expr.bulk.relative = cbind(expr.bulk.norm %>% select(gene_id:end), expr.bulk.relative)
+write_tsv(expr.bulk.relative, path=file.path(ad_dir, "fgwas/expr.bulk.eqtl_catalogue.relative.tsv.gz"))
+
+# Make a file which has 1/0 for whether the tissue has expression > 80th pctile
+expr_gt_80 = ((expr.bulk.relative %>% select(-chr, -start, -end, -gene_id, -symbol) > 80) * 1) %>% as_tibble()
+expr.bulk.relative.gt_80 = bind_cols(expr.bulk.relative %>% select(chr, start, end, gene_id), expr_gt_80)
+write_tsv(expr.bulk.relative.gt_80 %>% arrange(chr, start),
+          path=file.path(ad_dir, "fgwas/expr.bulk.eqtl_catalogue.relative.gt_80.bed.gz"), col_names = F)
+
+expr_gt_90 = ((expr.bulk.relative %>% select(-chr, -start, -end, -gene_id, -symbol) > 90) * 1) %>% as_tibble()
+expr.bulk.relative.gt_90 = bind_cols(expr.bulk.relative %>% select(chr, start, end, gene_id), expr_gt_90)
+write_tsv(expr.bulk.relative.gt_90 %>% arrange(chr, start),
+          path=file.path(ad_dir, "fgwas/expr.bulk.eqtl_catalogue.relative.gt_90.bed.gz"), col_names = F)
+
+gt_80_colnames = paste0(paste0(colnames(expr.bulk.relative.gt_80 %>% select(-chr, -start, -end, -gene_id)), "_gt_80"), collapse = "\t")
+write_lines(gt_80_colnames, path=file.path(ad_dir, "fgwas/expr.bulk.eqtl_catalogue.relative.gt_80.colnames.tsv"))
+gt_90_colnames = paste0(paste0(colnames(expr.bulk.relative.gt_90 %>% select(-chr, -start, -end, -gene_id)), "_gt_90"), collapse = "\t")
+write_lines(gt_90_colnames, path=file.path(ad_dir, "fgwas/expr.bulk.eqtl_catalogue.relative.gt_90.colnames.tsv"))
+```
+
+We can also look at correlations for just brain tissues.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+#pdf("bulk_rnaseq_tissue_cor.brain.pdf", width=10, height=9)
+brain_select = grepl("Brain", colnames(expr_cor), ignore.case = T)
+pheatmap(expr_cor[brain_select, brain_select], cluster_cols = T, cluster_rows = T, treeheight_col = 30,
+         show_colnames = F, fontsize = 7, main = "BRAIN RNA-seq tissue correlations")
+#dev.off()
+```
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+gtex_brain_cols = colnames(expr.bulk.norm)[grepl("Brain_", colnames(expr.bulk.norm))]
+expr.bulk.subset = expr.bulk.norm %>% select(gene_id:end, one_of(gtex_brain_cols))
+N = length(gtex_brain_cols)
+expr.bulk.relative = t(apply(expr.bulk.subset %>% select(-gene_id:-end), MARGIN=1, FUN=function(x) rank(x) / N * 100))
+expr.bulk.relative = cbind(expr.bulk.norm %>% select(gene_id:end), expr.bulk.relative)
+write_tsv(expr.bulk.relative, path=file.path(ad_dir, "fgwas/expr.bulk.brain.relative.tsv.gz"))
+
+# Make a file which has 1/0 for whether the tissue has expression > 80th pctile
+expr_gt_80 = ((expr.bulk.relative %>% select(-chr, -start, -end, -gene_id, -symbol) > 80) * 1) %>% as_tibble()
+expr.bulk.relative.gt_80 = bind_cols(expr.bulk.relative %>% select(chr, start, end, gene_id), expr_gt_80)
+write_tsv(expr.bulk.relative.gt_80 %>% arrange(chr, start),
+          path=file.path(ad_dir, "fgwas/expr.bulk.brain.relative.gt_80.bed.gz"), col_names = F)
+
+expr_gt_90 = ((expr.bulk.relative %>% select(-chr, -start, -end, -gene_id, -symbol) > 90) * 1) %>% as_tibble()
+expr.bulk.relative.gt_90 = bind_cols(expr.bulk.relative %>% select(chr, start, end, gene_id), expr_gt_90)
+write_tsv(expr.bulk.relative.gt_90 %>% arrange(chr, start),
+          path=file.path(ad_dir, "fgwas/expr.bulk.brain.relative.gt_90.bed.gz"), col_names = F)
+
+gt_80_colnames = paste0(paste0(colnames(expr.bulk.relative.gt_80 %>% select(-chr, -start, -end, -gene_id)), "_gt_80"), collapse = "\t")
+write_lines(gt_80_colnames, path=file.path(ad_dir, "fgwas/expr.bulk.brain.relative.gt_80.colnames.tsv"))
+gt_90_colnames = paste0(paste0(colnames(expr.bulk.relative.gt_90 %>% select(-chr, -start, -end, -gene_id)), "_gt_90"), collapse = "\t")
+write_lines(gt_90_colnames, path=file.path(ad_dir, "fgwas/expr.bulk.brain.relative.gt_90.colnames.tsv"))
+```
+
+We save a file of expression quantiles for each GTEx brain region relative to others (excluding other brain samples, e.g. ROSMAP brain).
+
+Finally, let's see correlations for single-cell brain cell types.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+#pdf("sc_rnaseq_tissue_cor.pdf", width=10, height=9)
+#expr_cor = cor(log(expr.sc.norm[, -(1:5)] + 0.1))
+expr_cor = cor(expr.sc.norm[, -(1:5)])
+pheatmap(expr_cor, cluster_cols = T, cluster_rows = T, treeheight_col = 30,
+         show_colnames = F, fontsize = 9, main = "scRNA-seq brain cell type correlations")
+#dev.off()
+```
+
+We save a file of expression quantiles for each of these relative to the others.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+write_tsv(expr.sc.norm, path=file.path(ad_dir, "fgwas/expr.sc.brain.norm.tsv.gz"))
+
+# Make a file which has 1/0 for whether the tissue has expression > 80th pctile
+expr_gt_80 = ((expr.sc.norm %>% select(-chr, -start, -end, -gene_id, -symbol) > 0.80) * 1) %>% as_tibble()
+expr.sc.norm.gt_80 = bind_cols(expr.sc.norm %>% select(chr, start, end, gene_id), expr_gt_80)
+write_tsv(expr.sc.norm.gt_80 %>% arrange(chr, start),
+          path=file.path(ad_dir, "fgwas/expr.sc.brain.norm.gt_80.bed.gz"), col_names = F)
+
+expr_gt_90 = ((expr.sc.norm %>% select(-chr, -start, -end, -gene_id, -symbol) > 0.90) * 1) %>% as_tibble()
+expr.sc.norm.gt_90 = bind_cols(expr.sc.norm %>% select(chr, start, end, gene_id), expr_gt_90)
+write_tsv(expr.sc.norm.gt_90 %>% arrange(chr, start),
+          path=file.path(ad_dir, "fgwas/expr.sc.brain.norm.gt_90.bed.gz"), col_names = F)
+
+########################### Relative expression
+N = ncol(expr.sc.norm) - 5
+expr.sc.relative = t(apply(expr.sc.norm %>% select(-gene_id:-end), MARGIN=1, FUN=function(x) rank(x) / N * 100))
+expr.sc.relative = cbind(expr.sc.norm %>% select(gene_id:end), expr.sc.relative)
+write_tsv(expr.sc.relative, path=file.path(ad_dir, "fgwas/expr.sc.brain.relative.tsv.gz"))
+
+# Make a file which has 1/0 for whether the tissue has expression > 80th pctile
+expr_gt_80 = ((expr.sc.relative %>% select(-chr, -start, -end, -gene_id, -symbol) > 0.80) * 1) %>% as_tibble()
+expr.sc.relative.gt_80 = bind_cols(expr.sc.relative %>% select(chr, start, end, gene_id), expr_gt_80)
+write_tsv(expr.sc.relative.gt_80 %>% arrange(chr, start),
+          path=file.path(ad_dir, "fgwas/expr.sc.brain.relative.gt_80.bed.gz"), col_names = F)
+
+expr_gt_90 = ((expr.sc.relative %>% select(-chr, -start, -end, -gene_id, -symbol) > 0.90) * 1) %>% as_tibble()
+expr.sc.relative.gt_90 = bind_cols(expr.sc.relative %>% select(chr, start, end, gene_id), expr_gt_90)
+write_tsv(expr.sc.relative.gt_90 %>% arrange(chr, start),
+          path=file.path(ad_dir, "fgwas/expr.sc.brain.relative.gt_90.bed.gz"), col_names = F)
+
+gt_80_colnames = paste0(paste0(colnames(expr.sc.relative.gt_80 %>% select(-chr, -start, -end, -gene_id)), "_gt_80"), collapse = "\t")
+write_lines(gt_80_colnames, path=file.path(ad_dir, "fgwas/expr.sc.brain.relative.gt_80.colnames.tsv"))
+gt_90_colnames = paste0(paste0(colnames(expr.sc.relative.gt_90 %>% select(-chr, -start, -end, -gene_id)), "_gt_90"), collapse = "\t")
+write_lines(gt_90_colnames, path=file.path(ad_dir, "fgwas/expr.sc.brain.relative.gt_90.colnames.tsv"))
+```
+
+

@@ -1,0 +1,371 @@
+---
+title: "Plot fgwas enrichments"
+output: html_document
+---
+
+## Network
+
+Let's first look at genome-wide enrichments for high gene network scores, in separate bins.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+library(tidyverse)
+theme_set(theme_classic())
+ad_dir = "/Users/jeremys/work/opentargets/AD_finemap"
+
+bpy.colors = function (n = 100, cutoff.tails = 0.1, alpha = 1) {
+    n <- as.integer(n[1])
+    if (n <= 0)
+        return(character(0))
+	if (cutoff.tails >= 1 || cutoff.tails < 0)
+		stop("cutoff.tails should be in [0, 1]")
+	i = seq(0.5 * cutoff.tails, 1 - 0.5 * cutoff.tails, length = n)
+    r = ifelse(i < .25, 0, ifelse(i < .57, i / .32 - .78125, 1))
+    g = ifelse(i < .42, 0, ifelse(i < .92, 2 * i - .84, 1))
+    b = ifelse(i < .25, 4 * i, ifelse(i < .42, 1,
+        ifelse(i < .92, -2 * i + 1.84, i / .08 - 11.5)))
+    rgb(r, g, b, alpha)
+}
+```
+
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=7, fig.height=5}
+networkEnrichmentNearest_file = file.path(ad_dir, "fgwas/out/fgwas.network.combined.params")
+readFgwasEnrich = function(fname) {
+  networkEnrich.df = read_table2(fname) %>%
+    group_by(parameter) %>%
+    mutate(CI_lo = as.numeric(gsub("<|>", "", CI_lo)),
+           CI_hi = as.numeric(gsub("<|>", "", CI_hi)),
+           estimate = as.numeric(gsub("<|>", "", estimate)),
+           CI_lo = max(min(CI_lo, 5), -5),
+           CI_hi = max(min(CI_hi, 5), -5),
+           estimate = max(min(estimate, 5), -5)) %>%
+    ungroup()
+}
+networkEnrich.df = readFgwasEnrich(networkEnrichmentNearest_file) %>%
+  filter(grepl("network", parameter)) %>%
+  mutate(parameter = gsub("network_", "", gsub("_nearest_ln", "", parameter)),
+         parameter = gsub("gt_", "> ", parameter),
+         parameter = gsub("_", "-", parameter)) %>%
+  arrange(desc(estimate))
+
+#p.network = ggplot(networkEnrich.df, aes(x=fct_reorder(parameter, -estimate), y=estimate)) +
+# Reorder factor levels to put lowest bins on left, highest on right
+networkEnrich.df$parameter = factor(as.character(networkEnrich.df$parameter),
+                                    levels = c("> 95", "90-95", "80-90", "70-80", "60-70", "50-60"))
+p.network = ggplot(networkEnrich.df, aes(x=parameter, y=estimate)) +
+  geom_point(color = "cornflowerblue") +
+  geom_errorbar(aes(ymin = CI_lo, ymax = CI_hi), width = 0, col = "cornflowerblue") +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1)) +
+  xlab("Pagerank percentile bin") + ylab("AD risk log(odds ratio)") +
+  ggtitle("Network score enrichment") +
+  geom_hline(yintercept = 0, col = "grey70")
+p.network
+
+# Plot for a paper supp figure
+pdf(file.path(ad_dir, "network/network.fgwas_enrichment.pdf"), width=3.1*1.4, height=2.3*1.4)
+p.network
+dev.off()
+```
+
+Enrichments gradually increase with greater network score, and these become significant above a page.rank.pctile of 80%.
+
+
+## Bulk expression
+
+Next, look at genome-wide enrichments for relative gene expression > 80th percentile across tissues.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=9, fig.height=5}
+exprEnrichmentsBulkAllNearest_gt_80_file = file.path(ad_dir, "fgwas/out/expr.bulk.gtex.nearest_gt_80.single.enrichments.tsv")
+exprEnrichmentsBulkAllNormNearest_gt_80_file = file.path(ad_dir, "fgwas/out/expr.bulk.gtex.norm.nearest_gt_80.single.enrichments.tsv")
+exprEnrichmentsBulkBrainNearest_gt_80_file = file.path(ad_dir, "fgwas/out/expr.bulk_brain.nearest_gt_80.single.enrichments.tsv")
+exprEnrichmentsSCBrainNearest_gt_80_file = file.path(ad_dir, "fgwas/out/expr.sc_brain.nearest_gt_80.single.enrichments.tsv")
+exprEnrichmentsSCBrainNormNearest_gt_80_file = file.path(ad_dir, "fgwas/out/expr.sc_brain.norm.nearest_gt_80.single.enrichments.tsv")
+
+bulk_all_gt_80.df = readFgwasEnrich(exprEnrichmentsBulkAllNearest_gt_80_file) %>%
+  mutate(parameter = gsub("_gt_80_ln", "", parameter)) %>%
+  arrange(desc(estimate))
+
+ggplot(bulk_all_gt_80.df, aes(x=fct_reorder(parameter, -estimate), y=estimate)) +
+  geom_point(color = "cornflowerblue") +
+  geom_errorbar(aes(ymin = CI_lo, ymax = CI_hi), width = 0, col = "cornflowerblue") +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1)) +
+  xlab("Expression dataset") + ylab("log(odds ratio)") +
+  ggtitle("Relative expression > 80th %ile") +
+  geom_hline(yintercept = 0, col = "grey70") +
+  coord_cartesian(ylim = c(-3, 2.2))
+```
+
+Similarly for relative expression > 90th percentile.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=9, fig.height=5}
+exprEnrichmentsBulkAllNearest_gt_90_file = file.path(ad_dir, "fgwas/out/expr.bulk.gtex.nearest_gt_90.single.enrichments.tsv")
+exprEnrichmentsBulkAllNormNearest_gt_90_file = file.path(ad_dir, "fgwas/out/expr.bulk.gtex.norm.nearest_gt_90.single.enrichments.tsv")
+exprEnrichmentsBulkBrainNearest_gt_90_file = file.path(ad_dir, "fgwas/out/expr.bulk_brain.nearest_gt_90.single.enrichments.tsv")
+exprEnrichmentsSCBrainNearest_gt_90_file = file.path(ad_dir, "fgwas/out/expr.sc_brain.nearest_gt_90.single.enrichments.tsv")
+exprEnrichmentsSCBrainNormNearest_gt_90_file = file.path(ad_dir, "fgwas/out/expr.sc_brain.norm.nearest_gt_90.single.enrichments.tsv")
+
+bulk_all_gt_90.df = readFgwasEnrich(exprEnrichmentsBulkAllNearest_gt_90_file) %>%
+  mutate(parameter = gsub("_gt_90_ln", "", parameter)) %>%
+  arrange(desc(estimate))
+
+ggplot(bulk_all_gt_90.df, aes(x=fct_reorder(parameter, estimate), y=estimate)) +
+  geom_point(color = "cornflowerblue") +
+  geom_errorbar(aes(ymin = CI_lo, ymax = CI_hi), width = 0, col = "cornflowerblue") +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1)) +
+  xlab("Expression dataset") + ylab("log(odds ratio)") +
+  ggtitle("Relative expression > 90th %ile") +
+  geom_hline(yintercept = 0, col = "grey70") +
+  coord_cartesian(ylim = c(-3, 2.2))
+```
+
+And combining the two into one plot.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=10}
+bulk_all_expr.df = bind_rows(bulk_all_gt_80.df %>% mutate(dataset=">80"),
+                             bulk_all_gt_90.df %>% mutate(dataset=">90")) %>%
+  mutate(parameter = gsub("_", " ", parameter),
+         parameter = gsub("primary", "Primary", parameter),
+         parameter = gsub("ipsc", "iPSC", parameter))
+
+
+col90 = bpy.colors(10)[3]
+col80 = bpy.colors(10)[7]
+# Ncolors = 10
+# image(1:Ncolors, 1, as.matrix(1:Ncolors), 
+#       col=bpy.colors(Ncolors),
+#       xlab="", ylab = "", xaxt = "n", yaxt = "n", bty = "n")
+# myCols = bpy.colors(Ncolors)
+
+p = ggplot(bulk_all_expr.df, aes(x=fct_reorder(parameter, -estimate), y=estimate, fill=dataset, col=dataset, group=dataset)) +
+  geom_point(position = position_dodge(width = .75)) +
+  geom_errorbar(aes(ymin = CI_lo, ymax = CI_hi), width = 0, position = position_dodge(width = .75)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  xlab("Expression dataset") + ylab("AD risk log(odds ratio)") +
+  ggtitle("Relative expression enrichment") +
+  scale_fill_manual(name = "Expression\npercentile", values = c(">90"=col90, ">80"=col80)) +
+  scale_color_manual(name = "Expression\npercentile", values = c(">90"=col90, ">80"=col80)) +
+  geom_hline(yintercept = 0, col = "grey70") +
+  coord_cartesian(ylim = c(-3, 2.2))
+p
+
+
+# Plot for a paper supp figure
+pdf(file.path(ad_dir, "expression/bulk.fgwas_enrichment.pdf"), width=9, height=5)
+p
+dev.off()
+```
+
+We can also see what the enrichments are for highly expressed genes, rather than those highly expressed relative to other datasets.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=10}
+bulk_all_gt_80.df = readFgwasEnrich(exprEnrichmentsBulkAllNormNearest_gt_80_file) %>%
+  mutate(parameter = gsub("_gt_80_ln", "", parameter)) %>%
+  arrange(desc(estimate))
+bulk_all_gt_90.df = readFgwasEnrich(exprEnrichmentsBulkAllNormNearest_gt_90_file) %>%
+  mutate(parameter = gsub("_gt_90_ln", "", parameter)) %>%
+  arrange(desc(estimate))
+
+
+bulk_all_expr.df = bind_rows(bulk_all_gt_80.df %>% mutate(dataset=">80"),
+                             bulk_all_gt_90.df %>% mutate(dataset=">90"))
+ggplot(bulk_all_expr.df, aes(x=fct_reorder(parameter, -estimate), y=estimate, fill=dataset, col=dataset, group=dataset)) +
+  geom_point(position = position_dodge(width = .75)) +
+  geom_errorbar(aes(ymin = CI_lo, ymax = CI_hi), width = 0, position = position_dodge(width = .75)) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1)) +
+  xlab("Expression dataset") + ylab("log(odds ratio)") +
+  ggtitle("Normalised expression enrichment") +
+  geom_hline(yintercept = 0, col = "grey70") +
+  coord_cartesian(ylim = c(-3, 2.2))
+```
+
+Nearly all tissues show higher enrichment of AD risk near highly expressed genes.
+
+Do something similar considering only GTEx brain areas (and relative expression among these).
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+bulk_brain_gt_80.df = readFgwasEnrich(exprEnrichmentsBulkBrainNearest_gt_80_file) %>%
+  mutate(parameter = gsub("_gt_80_ln", "", parameter)) %>%
+  arrange(desc(estimate))
+
+bulk_brain_gt_90.df = readFgwasEnrich(exprEnrichmentsBulkBrainNearest_gt_90_file) %>%
+  mutate(parameter = gsub("_gt_90_ln", "", parameter)) %>%
+  arrange(desc(estimate))
+
+bulk_brain_expr.df = bind_rows(bulk_brain_gt_80.df %>% mutate(dataset=">80"),
+                               bulk_brain_gt_90.df %>% mutate(dataset=">90"))
+ggplot(bulk_brain_expr.df, aes(x=fct_reorder(parameter, -estimate), y=estimate, fill=dataset, col=dataset, group=dataset)) +
+  geom_point(position = position_dodge(width = .75)) +
+  geom_errorbar(aes(ymin = CI_lo, ymax = CI_hi), width = 0, position = position_dodge(width = .75)) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1)) +
+  xlab("Expression dataset") + ylab("log(odds ratio)") +
+  ggtitle("Relative expression enrichment (brain)") +
+  geom_hline(yintercept = 0, col = "grey70") +
+  coord_cartesian(ylim = c(-3, 2.2))
+```
+
+
+## Single-cell brain expression
+
+Relative expression.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+sc_brain_gt_80.df = readFgwasEnrich(exprEnrichmentsSCBrainNearest_gt_80_file) %>%
+  mutate(parameter = gsub("_gt_80_ln", "", parameter)) %>%
+  arrange(desc(estimate))
+
+sc_brain_gt_90.df = readFgwasEnrich(exprEnrichmentsSCBrainNearest_gt_90_file) %>%
+  mutate(parameter = gsub("_gt_90_ln", "", parameter)) %>%
+  arrange(desc(estimate))
+
+sc_brain_expr.df = bind_rows(sc_brain_gt_80.df %>% mutate(dataset=">80"),
+                             sc_brain_gt_90.df %>% mutate(dataset=">90")) %>%
+  mutate(parameter = gsub("L5_6", "L5/6", parameter),
+         parameter = gsub("_", " ", parameter))
+p1 = ggplot(sc_brain_expr.df, aes(x=fct_reorder(parameter, -estimate), y=estimate, fill=dataset, col=dataset, group=dataset)) +
+  theme_classic(12) +
+  geom_point(position = position_dodge(width = .75)) +
+  geom_errorbar(aes(ymin = CI_lo, ymax = CI_hi), width = 0, position = position_dodge(width = .75)) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1)) +
+  scale_y_continuous(breaks = c(-4, -2, 0, 2)) +
+  scale_fill_manual(name = "Expression\npercentile", values = c(">90"=col90, ">80"=col80)) +
+  scale_color_manual(name = "Expression\npercentile", values = c(">90"=col90, ">80"=col80)) +
+  xlab("Expression dataset") + ylab("log(odds ratio)") +
+  ggtitle("Relative expression enrichment (brain single-cell)") +
+  geom_hline(yintercept = 0, col = "grey70") +
+  coord_cartesian(ylim = c(-5, 2.2))
+p1
+
+# Plot a version for a paper figure
+pdf(file.path(ad_dir, "expression/sc_brain.expression_enrichment.pdf"), width=3.1*1.5, height=2.4*1.5)
+p1 +
+  theme(legend.justification = c(1, 1), legend.position = c(1, 1.02), legend.key.size = unit(0.5, "cm"),
+        legend.title = element_text(size=11), plot.title = element_blank()) +
+  coord_cartesian(ylim = c(-5, 2.6))
+dev.off()
+pdf(file.path(ad_dir, "expression/sc_brain.expression_enrichment.noLegend.pdf"), width=3.1*1.5, height=2.4*1.5)
+p1 +
+  theme(legend.justification = c(1, 1), legend.position = c(1, 1.02), legend.key.size = unit(0.5, "cm"),
+        legend.title = element_text(size=11), plot.title = element_blank()) +
+  scale_fill_manual(guide=F, values = c(">90"=col90, ">80"=col80)) +
+  scale_color_manual(guide=F, values = c(">90"=col90, ">80"=col80)) +
+  coord_cartesian(ylim = c(-5, 2.6))
+dev.off()
+
+```
+
+Normalised expression.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+sc_brain_gt_80.df = readFgwasEnrich(exprEnrichmentsSCBrainNormNearest_gt_80_file) %>%
+  mutate(parameter = gsub("_gt_80_ln", "", parameter)) %>%
+  arrange(desc(estimate))
+
+sc_brain_gt_90.df = readFgwasEnrich(exprEnrichmentsSCBrainNormNearest_gt_90_file) %>%
+  mutate(parameter = gsub("_gt_90_ln", "", parameter)) %>%
+  arrange(desc(estimate))
+
+sc_brain_expr.df = bind_rows(sc_brain_gt_80.df %>% mutate(dataset=">80"),
+                             sc_brain_gt_90.df %>% mutate(dataset=">90")) %>%
+  mutate(parameter = gsub("L5_6", "L5/6", parameter),
+         parameter = gsub("_", " ", parameter))
+ggplot(sc_brain_expr.df, aes(x=fct_reorder(parameter, -estimate), y=estimate, fill=dataset, col=dataset, group=dataset)) +
+  geom_point(position = position_dodge(width = .75)) +
+  geom_errorbar(aes(ymin = CI_lo, ymax = CI_hi), width = 0, position = position_dodge(width = .75)) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1)) +
+  xlab("Expression dataset") + ylab("log(odds ratio) AD risk") +
+  ggtitle("Normalised expression enrichment (brain single-cell)") +
+  geom_hline(yintercept = 0, col = "grey70") +
+  coord_cartesian(ylim = c(-5, 2.2))
+```
+
+
+## Conditioning on microglia expression
+
+Here we condition on primary microglia relative expression, to see whether any other tissues / cell types are still enriched after accounting for their correlation with microglia. (First plot is models with both annotations in. Second plot is model with one annotation conditioned on microglia.)
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=10}
+bulk_all_gt_80.cond.df = readFgwasEnrich(file.path(ad_dir, "fgwas/out/expr.bulk_all.microglia_plus_ann.nearest_gt_80.single.enrichments.tsv")) %>%
+  mutate(parameter = gsub("_gt_80_ln", "", parameter)) %>%
+  arrange(desc(estimate))
+bulk_all_gt_90.cond.df = readFgwasEnrich(file.path(ad_dir, "fgwas/out/expr.bulk_all.microglia_plus_ann.nearest_gt_90.single.enrichments.tsv")) %>%
+  mutate(parameter = gsub("_gt_90_ln", "", parameter)) %>%
+  arrange(desc(estimate))
+
+bulk_all.cond.df = bind_rows(bulk_all_gt_80.cond.df %>% mutate(dataset=">80"),
+                             bulk_all_gt_90.cond.df %>% mutate(dataset=">90"))
+
+ggplot(bulk_all.cond.df, aes(x=fct_reorder(parameter, -estimate), y=estimate, fill=dataset, col=dataset, group=dataset)) +
+  geom_point(position = position_dodge(width = .75)) +
+  geom_errorbar(aes(ymin = CI_lo, ymax = CI_hi), width = 0, position = position_dodge(width = .75)) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1)) +
+  xlab("Expression dataset") + ylab("log(odds ratio)") +
+  ggtitle("Relative expression enrichment (microglia + annot)") +
+  geom_hline(yintercept = 0, col = "grey70") +
+  coord_cartesian(ylim = c(-3, 2.2))
+
+bulk_all_gt_80.cond.df = readFgwasEnrich(file.path(ad_dir, "fgwas/out/expr.bulk_all.nearest_gt_80.cond_mic.enrichments.tsv")) %>%
+  mutate(parameter = gsub("_gt_80", "", parameter)) %>%
+  arrange(desc(estimate))
+bulk_all_gt_90.cond.df = readFgwasEnrich(file.path(ad_dir, "fgwas/out/expr.bulk_all.nearest_gt_90.cond_mic.enrichments.tsv")) %>%
+  mutate(parameter = gsub("_gt_90", "", parameter)) %>%
+  arrange(desc(estimate))
+
+bulk_all.cond.df = bind_rows(bulk_all_gt_80.cond.df %>% mutate(dataset=">80"),
+                             bulk_all_gt_90.cond.df %>% mutate(dataset=">90"))
+
+ggplot(bulk_all.cond.df, aes(x=fct_reorder(parameter, -estimate), y=estimate, fill=dataset, col=dataset, group=dataset)) +
+  geom_point(position = position_dodge(width = .75)) +
+  geom_errorbar(aes(ymin = CI_lo, ymax = CI_hi), width = 0, position = position_dodge(width = .75)) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1)) +
+  xlab("Expression dataset") + ylab("log(odds ratio)") +
+  ggtitle("Relative expression enrichment (conditioned on microglia)") +
+  geom_hline(yintercept = 0, col = "grey70") +
+  coord_cartesian(ylim = c(-3, 2.2))
+
+```
+
+Enrichments for other expression datasets are reduced when primary microglia expression is included in the model, but it's hard to say whether any remaining enrichments are significant.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+sc_brain_gt_80.cond.df = readFgwasEnrich(file.path(ad_dir, "fgwas/out/expr.sc_brain.microglia_plus_ann.nearest_gt_80.single.enrichments.tsv")) %>%
+  mutate(parameter = gsub("_gt_80_ln", "", parameter)) %>%
+  arrange(desc(estimate))
+sc_brain_gt_90.cond.df = readFgwasEnrich(file.path(ad_dir, "fgwas/out/expr.sc_brain.microglia_plus_ann.nearest_gt_90.single.enrichments.tsv")) %>%
+  mutate(parameter = gsub("_gt_90_ln", "", parameter)) %>%
+  arrange(desc(estimate))
+
+sc_brain.cond.df = bind_rows(sc_brain_gt_80.cond.df %>% mutate(dataset=">80"),
+                             sc_brain_gt_90.cond.df %>% mutate(dataset=">90"))
+
+ggplot(sc_brain.cond.df, aes(x=fct_reorder(parameter, -estimate), y=estimate, fill=dataset, col=dataset, group=dataset)) +
+  geom_point(position = position_dodge(width = .75)) +
+  geom_errorbar(aes(ymin = CI_lo, ymax = CI_hi), width = 0, position = position_dodge(width = .75)) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1)) +
+  xlab("Expression dataset") + ylab("log(odds ratio)") +
+  ggtitle("Relative expression enrichment (brain sc - microglia + annot)") +
+  geom_hline(yintercept = 0, col = "grey70") +
+  coord_cartesian(ylim = c(-5, 2.2))
+
+sc_brain_gt_80.cond.df = readFgwasEnrich(file.path(ad_dir, "fgwas/out/expr.sc_brain.nearest_gt_80.cond_mic.enrichments.tsv")) %>%
+  mutate(parameter = gsub("_gt_80", "", parameter)) %>%
+  arrange(desc(estimate))
+sc_brain_gt_90.cond.df = readFgwasEnrich(file.path(ad_dir, "fgwas/out/expr.sc_brain.nearest_gt_90.cond_mic.enrichments.tsv")) %>%
+  mutate(parameter = gsub("_gt_90", "", parameter)) %>%
+  arrange(desc(estimate))
+
+sc_brain.cond.df = bind_rows(sc_brain_gt_80.cond.df %>% mutate(dataset=">80"),
+                             sc_brain_gt_90.cond.df %>% mutate(dataset=">90"))
+
+ggplot(sc_brain.cond.df, aes(x=fct_reorder(parameter, -estimate), y=estimate, fill=dataset, col=dataset, group=dataset)) +
+  geom_point(position = position_dodge(width = .75)) +
+  geom_errorbar(aes(ymin = CI_lo, ymax = CI_hi), width = 0, position = position_dodge(width = .75)) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1)) +
+  xlab("Expression dataset") + ylab("log(odds ratio)") +
+  ggtitle("Relative expression enrichment (brain sc - conditioned on microglia)") +
+  geom_hline(yintercept = 0, col = "grey70") +
+  coord_cartesian(ylim = c(-5, 2.2))
+```
+
+For brain cell type expression, there's a hint that astrocytes could still be enriched when conditioning on primary microglia, but this is uncertain.
+
+

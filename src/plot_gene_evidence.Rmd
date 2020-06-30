@@ -1,0 +1,784 @@
+---
+title: "Plotting AD fine-mapping gene prioritization scores"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(cowplot)
+library(scales)
+
+knitr::opts_chunk$set(echo = TRUE)
+
+# Top gene from each of 37 loci, plus 16 more
+numGenesToShow = 53
+savePlots = T
+
+ad_dir = "/Users/jeremys/work/opentargets/AD_finemap"
+output_root = "/Users/jeremys/work/opentargets/AD_finemap/genes/"
+
+gene_evidence.df = read_tsv(file.path(ad_dir, "genes/AD.loci.1Mb_window.all.geneScores.tsv"))
+```
+
+## Multiple ways of plotting top scoring genes
+
+### Top 53 genes, version 1
+
+This plot includes the top single gene from each locus (37 loci), and then adds the top remaining 23 genes to make up 60 genes
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height = 6, fig.width = 5}
+# Function to make barplot which shows score breakdown and color per locus
+scoreBarPlot = function(geneScores.df) {
+  geneScores.tidy.df = geneScores.df %>%
+    select(locus, gene_id, symbol, totalScore, codingScore, colocScore, exprScore, geneDistScore, networkScore) %>%
+    gather(key="scoreType", value="score", codingScore:networkScore) %>%
+    mutate(scoreType = gsub("Score", "", scoreType)) %>%
+    arrange(locus, desc(totalScore)) %>%
+    mutate(symbol = factor(as.character(symbol), levels = unique(as.character(symbol))),
+           shade = as.character(as.integer(as.factor(locus)) %% 2))
+
+  p.locus = ggplot(geneScores.tidy.df, aes(x=symbol)) +
+    geom_blank(mapping = aes(ymax=0), stat="identity", position="dodge") +
+    geom_raster(aes(x=symbol, y=-0.5, fill=shade), alpha=0.9) +
+    xlab("Gene") + ylab("") +
+    coord_flip() + theme_bw(8) +
+    scale_fill_manual(guide=F, values=c("0"="lightgrey", "1"="grey50")) +
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.margin=unit(c(0,0,0,0), "mm")) +
+    scale_y_continuous(expand = c(0,0))
+  p.locus
+  
+  pal = hue_pal()(6)
+  #show_col(pal)
+  score_colors = c("total" = "darkorange", "coding" = pal[2], "coloc" = pal[3], "expr" = pal[4], "geneDist" = pal[5], "network" = pal[6])
+  p.score = ggplot(geneScores.tidy.df, aes(x=symbol, y=score, fill=scoreType)) +
+    geom_bar(stat="identity", col="black", size = 0.15) +
+    xlab("Gene") +
+    coord_flip() + theme_bw(8) +
+    theme(axis.text.y = element_blank(), axis.title.y = element_blank(), axis.ticks.y = element_blank(),
+          plot.margin=unit(c(0,0,0,0), "mm"), panel.grid = element_blank()) +
+    scale_y_continuous(expand = c(0,0)) +
+    scale_fill_manual(values = score_colors)
+  p.score
+  cowplot::plot_grid(plotlist = list(p.locus, p.score), ncol=2, align = "h", rel_widths=c(1.5,6.5))
+}
+
+merged.ranks.df = gene_evidence.df %>%
+  arrange(desc(totalScore)) %>%
+  group_by(locus) %>%
+  mutate(rank_within_locus = row_number()) %>%
+  ungroup() %>%
+  mutate(rank_overall = row_number())
+
+numLoci = length(unique(merged.ranks.df$locus))
+numLociWithNoGeneInTopN = numLoci - length(unique(merged.ranks.df %>% filter(rank_overall <= numGenesToShow) %>% .$locus))
+topGenesPerLocusAndOverall.df = merged.ranks.df %>%
+  filter(rank_within_locus == 1 | rank_overall <= (numGenesToShow - numLociWithNoGeneInTopN))
+
+scoreBarPlot(topGenesPerLocusAndOverall.df)
+
+if (savePlots) {
+  pdf(file = paste0(output_root, "score.breakdown.topGenes.v1.pdf"), width = 5, height = 6)
+  print(scoreBarPlot(topGenesPerLocusAndOverall.df))
+  dev.off()
+}
+```
+
+### Top 53 genes, version 2
+
+Grey indicator at left to distinguish loci.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height = 6, fig.width = 5}
+scoreBarPlotSeparated2 = function(geneScores.df) {
+  geneScores.tidy.df = geneScores.df %>%
+    select(locus, gene_id, symbol, totalScore, codingScore, colocScore, exprScore, geneDistScore, networkScore) %>%
+    gather(key="scoreType", value="score", codingScore:networkScore) %>%
+    mutate(scoreType = gsub("Score", "", scoreType)) %>%
+    arrange(locus, desc(totalScore)) %>%
+    mutate(symbol = factor(as.character(symbol), levels = unique(as.character(symbol))),
+           shade = as.character(as.integer(as.factor(locus)) %% 2)) %>%
+    mutate(scoreType = factor(as.character(scoreType), levels=c("total", "coding", "coloc", "expr", "geneDist", "network")))
+  
+  #geneScores.tidy.locus = geneScores.tidy.df %>% filter(scoreType == "coding") %>% mutate(scoreType = "")
+  p.locus = ggplot(geneScores.tidy.df %>% filter(scoreType == "coding") %>% mutate(scoreType = ""), aes(x=symbol)) +
+    geom_blank(mapping = aes(ymax=0), stat="identity", position="dodge") +
+    geom_raster(aes(x=symbol, y=-0.5, fill=shade), alpha=0.9) +
+    xlab("Gene") + ylab("") +
+    coord_flip() + theme_bw(8) +
+    scale_fill_manual(guide=F, values=c("0"="lightgrey", "1"="grey50")) +
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.margin=unit(c(0,0,0,0), "mm")) +
+    scale_y_continuous(expand = c(0,0)) +
+    facet_wrap(~scoreType, ncol = 1, scales="free_x")
+#    scale_fill_manual(guide=F, values=c("0"="cornflowerblue", "1"="firebrick")) +
+  
+  pal = hue_pal()(6)
+  #show_col(pal)
+  score_colors = c("total" = "darkorange", "coding" = pal[2], "coloc" = pal[3], "expr" = pal[4], "geneDist" = pal[5], "network" = pal[6], "grey"="grey")
+  p.scores = ggplot(geneScores.tidy.df, aes(x=symbol, y=score, fill=scoreType)) +
+    geom_bar(stat="identity") +
+    xlab("Gene") +
+    coord_flip() + theme_bw(8) +
+    theme(axis.text.y = element_blank(), axis.title.y = element_blank(), axis.ticks.y = element_blank(),
+          plot.margin=unit(c(0,0,0,0), "mm"), panel.grid = element_blank(), axis.text.x = element_blank()) +
+    scale_y_continuous(expand = c(0,0)) +
+    facet_wrap(~scoreType, ncol = 5, scales="free_x") +
+    scale_fill_manual(guide=F, values = score_colors)
+
+  geneScores.tidy.df = geneScores.df %>%
+    mutate(totalScoreX = totalScore) %>%
+    select(locus, gene_id, symbol, totalScoreX, total = totalScore, codingScore, colocScore, exprScore, geneDistScore, networkScore) %>%
+    gather(key="scoreType", value="score", total) %>%
+    mutate(scoreType = gsub("Score", "", scoreType)) %>%
+    arrange(locus, desc(totalScoreX)) %>%
+    mutate(symbol = factor(as.character(symbol), levels = unique(as.character(symbol))),
+           shade = as.character(as.integer(as.factor(locus)) %% 2)) %>%
+    mutate(scoreType = factor(as.character(scoreType), levels=c("total", "coding", "coloc", "expr", "geneDist", "network")))
+  
+  #bg.df = geneScores.tidy.df %>% select(symbol) %>% unique()
+    #geom_raster(data = bg.df, mapping = aes(x=symbol, width = 1, ymin=-0, ymax=Inf), fill="grey", alpha=0.7)
+  p.totalScore = ggplot(geneScores.tidy.df, aes(x=symbol, y=score, fill=scoreType)) +
+    geom_bar(stat="identity") +
+    xlab("Gene") +
+    coord_flip() + theme_bw(8) +
+    theme(axis.text.y = element_blank(), axis.title.y = element_blank(), axis.ticks.y = element_blank(),
+          plot.margin=unit(c(0,0,0,0), "mm"), panel.grid = element_blank()) +
+    scale_y_continuous(expand = c(0,0)) +
+    facet_wrap(~scoreType, ncol = 5, scales="free_x") +
+    scale_fill_manual(guide=F, values = score_colors)
+  #p.totalScore
+  
+  cowplot::plot_grid(plotlist = list(p.locus, p.totalScore, p.scores), ncol=3, align = "h", rel_widths=c(1.5, 2, 5))
+}
+
+
+scoreBarPlotSeparated2(topGenesPerLocusAndOverall.df)
+if (savePlots) {
+  pdf(file = paste0(output_root, "score.breakdown.topGenes.v2.pdf"), width = 5, height = 6)
+  print(scoreBarPlotSeparated2(topGenesPerLocusAndOverall.df))
+  dev.off()
+}
+
+```
+
+### Top 53 genes, version 3
+
+Grey background to distinguish loci.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height = 7, fig.width = 5.5}
+scoreBarPlotSeparated3 = function(geneScores.df) {
+  geneScores.tidy.df = geneScores.df %>%
+    select(locus, gene_id, symbol, totalScore, codingScore, colocScore, exprScore, geneDistScore, networkScore) %>%
+    gather(key="scoreType", value="score", codingScore:networkScore) %>%
+    mutate(scoreType = gsub("Score", "", scoreType)) %>%
+    arrange(locus, desc(totalScore)) %>%
+    mutate(symbol = factor(as.character(symbol), levels = unique(as.character(symbol))),
+           symbolPos = as.integer(symbol),
+           shade = as.character((as.integer(as.factor(locus)) + 1) %% 2)) %>%
+    mutate(scoreType = factor(as.character(scoreType), levels=c("total", "coding", "coloc", "expr", "geneDist", "network")))
+  
+  #geneScores.tidy.locus = geneScores.tidy.df %>% filter(scoreType == "coding") %>% mutate(scoreType = "")
+  bg.df = geneScores.tidy.df %>% select(locus, symbolPos, shade) %>% unique()
+  p.locus = ggplot(geneScores.tidy.df %>% filter(scoreType == "coding") %>% mutate(scoreType = ""), aes(x=symbol)) +
+    geom_blank(mapping = aes(ymax=0), stat="identity", position="dodge") +
+    xlab("Gene") + ylab("") +
+    coord_flip() + theme_bw(8) +
+    scale_fill_manual(guide=F, values = c("0"="grey90", "1"="grey70")) +
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.margin=unit(c(0,0,0,0), "mm")) +
+    scale_y_continuous(expand = c(0,0)) +
+    scale_x_discrete(expand = c(0,0.8)) +
+    facet_wrap(~scoreType, ncol = 1, scales="free_x")
+#    scale_fill_manual(guide=F, values=c("0"="cornflowerblue", "1"="firebrick")) +
+  
+  pal = hue_pal()(6)
+  #show_col(pal)
+  score_colors = c("total" = "darkorange", "coding" = pal[2], "coloc" = pal[3], "expr" = pal[4], "geneDist" = pal[5], "network" = pal[6], "grey"="grey")
+  p.scores = ggplot(geneScores.tidy.df) +
+    geom_rect(data = geneScores.tidy.df, mapping = aes(xmin=symbolPos-0.5, xmax=symbolPos+0.5, ymin=0, ymax=Inf, fill=shade), alpha=1) +
+    geom_bar(aes(x=symbolPos, y=score, fill=scoreType), data=geneScores.tidy.df, stat="identity") +
+    xlab("Gene") +
+    coord_flip() + theme_bw(8) +
+    theme(axis.text.y = element_blank(), axis.title.y = element_blank(), axis.ticks.y = element_blank(),
+          plot.margin=unit(c(0,0,0,0), "mm"), panel.grid = element_blank(), axis.text.x = element_blank()) +
+    scale_y_continuous(expand = c(0,0)) +
+    scale_x_continuous(expand = c(0,0.3)) +
+    facet_wrap(~scoreType, ncol = 5, scales="free_x") +
+    scale_fill_manual(guide=F, values = c(score_colors, "0"="white", "1"="grey90"))
+
+  geneScores.tidy.df = geneScores.df %>%
+    mutate(totalScoreX = totalScore) %>%
+    select(locus, gene_id, symbol, totalScoreX, total = totalScore, codingScore, colocScore, exprScore, geneDistScore, networkScore) %>%
+    gather(key="scoreType", value="score", total) %>%
+    mutate(scoreType = gsub("Score", "", scoreType)) %>%
+    arrange(locus, desc(totalScoreX)) %>%
+    mutate(symbol = factor(as.character(symbol), levels = unique(as.character(symbol))),
+           symbolPos = as.integer(symbol),
+           shade = as.character((as.integer(as.factor(locus)) + 1) %% 2)) %>%
+    mutate(scoreType = factor(as.character(scoreType), levels=c("total", "coding", "coloc", "expr", "geneDist", "network")))
+  
+  bg.df = geneScores.tidy.df %>% select(locus, symbolPos, shade) %>% unique()
+  p.totalScore = ggplot(geneScores.tidy.df) +
+    geom_rect(data = bg.df, mapping = aes(xmin=symbolPos-0.5, xmax=symbolPos+0.5, ymin=0, ymax=Inf, fill=shade), alpha=1) +
+    geom_bar(aes(x=symbolPos, y=score, fill=scoreType), data = geneScores.tidy.df, stat="identity") +
+    xlab("Gene") +
+    coord_flip() + theme_bw(8) +
+    theme(axis.text.y = element_blank(), axis.title.y = element_blank(),
+          plot.margin=unit(c(0,0,0,0), "mm"), panel.grid = element_blank()) +
+    scale_y_continuous(expand = c(0,0)) +
+    scale_x_continuous(expand = c(0,0.3), breaks=seq(1, 60)) +
+    facet_wrap(~scoreType, ncol = 5, scales="free_x") +
+    scale_fill_manual(guide=F, values = c(score_colors, "0"="white", "1"="grey90"))
+  #p.totalScore
+  
+  cowplot::plot_grid(plotlist = list(p.locus, p.totalScore, p.scores), ncol=3, align = "h", rel_widths=c(1, 2, 5))
+}
+
+
+scoreBarPlotSeparated3(topGenesPerLocusAndOverall.df)
+if (savePlots) {
+  pdf(file = paste0(output_root, "score.breakdown.topGenes.v3.pdf"), width = 5.5, height = 7)
+  print(scoreBarPlotSeparated3(topGenesPerLocusAndOverall.df))
+  dev.off()
+}
+
+```
+
+
+### Top 53 genes, version 4
+
+Grouped by locus. Needs to have lines added manually for figure to clearly separate loci.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height = 7, fig.width = 5.5}
+scoreBarPlotSeparated4 = function(geneScores.df, boldGenes = c(), locusPlot = FALSE) {
+  if (!locusPlot) {
+    geneScores.df$chr = as.integer(gsub("chr", "", geneScores.df$chr))
+  }
+  geneScores.tidy.df = geneScores.df %>%
+    select(chr, locus, gene_id, dist, symbol, totalScore, codingScore, colocScore, exprScore, geneDistScore, networkScore) %>%
+    gather(key="scoreType", value="score", codingScore:networkScore) %>%
+    mutate(scoreType = gsub("Score", "", scoreType))
+  if (locusPlot) {
+    geneScores.tidy.df = geneScores.tidy.df %>% arrange(desc(chr), locus, desc(dist))
+  } else {
+    geneScores.tidy.df = geneScores.tidy.df %>% arrange(desc(chr), locus, totalScore)
+  }
+  geneScores.tidy.df = geneScores.tidy.df %>%
+    mutate(locus = factor(as.character(locus), levels = unique(as.character(locus))),
+           symbol = factor(as.character(symbol), levels = unique(as.character(symbol))),
+           symbolPos = as.integer(symbol) + (as.integer(locus)-1) * 0.3,
+           shade = as.character(as.integer(as.factor(locus)) %% 2)) %>%
+    mutate(scoreType = factor(as.character(scoreType), levels=c("total", "coding", "coloc", "expr", "geneDist", "network")))
+  
+  #geneScores.tidy.locus = geneScores.tidy.df %>% filter(scoreType == "coding") %>% mutate(scoreType = "")
+  genes.df = geneScores.tidy.df %>% select(chr, locus, symbolPos, symbol, shade) %>%
+    unique() %>%
+    mutate(boldGene = if_else(symbol %in% boldGenes, "bold", "plain"),
+           symbol = if_else(symbol %in% boldGenes, paste0(symbol, "*"), as.character(symbol)))
+    
+  locus.df = genes.df %>% group_by(locus) %>%
+    summarise(locusPos = mean(symbolPos),
+              chr = as.character(first(chr)))
+  # p.locus = ggplot(geneScores.tidy.df %>% filter(scoreType == "coding") %>% mutate(scoreType = ""), aes(x=symbol)) +
+  #   geom_blank(mapping = aes(ymax=0), stat="identity", position="dodge") +
+  #   xlab("Gene") + ylab("") +
+  #   coord_flip() + theme_classic(8) +
+  #   scale_fill_manual(guide=F, values = c("0"="grey90", "1"="grey70")) +
+  #   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.margin=unit(c(0,0,0,0), "mm")) +
+  #   scale_y_continuous(expand = c(0,0)) +
+  #   scale_x_discrete(expand = c(0,0.8))
+  p.locus = ggplot(locus.df, aes(x=symbolPos)) +
+    geom_text(data = genes.df, mapping = aes(x=symbolPos, y=2, label = symbol, fontface = boldGene), hjust = 1, size = 2.2) +
+    geom_text(data = locus.df, mapping = aes(x=locusPos, y=1.15, label = locus), hjust = 1, size = 2.2) +
+    geom_text(data = locus.df, mapping = aes(x=locusPos, y=0.1, label = chr), hjust = 1, size = 2.2) +
+    ylab("") +
+    coord_flip(ylim = c(0, 2)) + theme_classic(8) +
+    scale_x_continuous(expand = c(0, 0.8)) +
+    theme(axis.line.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+          axis.line.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(), axis.title.y = element_blank(),
+          plot.margin=unit(c(0,0,0,0), "mm"))
+#    scale_fill_manual(guide=F, values=c("0"="cornflowerblue", "1"="firebrick")) +
+  
+  pal = hue_pal()(6)
+  #show_col(pal)
+  score_colors = c("total" = "darkorange", "coding" = pal[2], "coloc" = pal[3], "expr" = pal[4], "geneDist" = pal[5], "network" = pal[6], "grey"="grey")
+  scoreTypes = unique(geneScores.tidy.df$scoreType)
+  plotlist = list()
+  for (sctype in scoreTypes) {
+    plot.df = geneScores.tidy.df %>% filter(scoreType == sctype)
+    ym = max(plot.df$score) + 0.15
+    p.scores = ggplot(data=plot.df) +
+      geom_bar(aes(x=symbolPos, y=score, fill=scoreType), stat="identity") +
+      xlab("Gene") +
+      coord_flip() + theme_classic(8) +
+      theme(axis.text.y = element_blank(), axis.title.y = element_blank(), axis.ticks.y = element_blank(),
+            axis.title.x = element_blank(), plot.margin=unit(c(0,0,0,0), "mm"), panel.grid = element_blank()) +
+      scale_y_continuous(expand = expand_scale(mult = 0, add = c(0,0.15)), breaks=c(0.5, 1, 1.5)) +
+      scale_x_continuous(expand = c(0,0.3)) +
+      scale_fill_manual(guide=F, values = c(score_colors, "0"="white", "1"="grey90"))
+    plotlist = c(plotlist, list(p.scores))
+  }
+  # p.scores = ggplot(geneScores.tidy.df) +
+  #   geom_rect(data = geneScores.tidy.df, mapping = aes(xmin=symbolPos-0.5, xmax=symbolPos+0.5, ymin=0, ymax=Inf, fill=shade), alpha=1) +
+  #   geom_bar(aes(x=symbolPos, y=score, fill=scoreType), data=geneScores.tidy.df, stat="identity") +
+  #   xlab("Gene") +
+  #   coord_flip() + theme_bw(8) +
+  #   theme(axis.text.y = element_blank(), axis.title.y = element_blank(), axis.ticks.y = element_blank(),
+  #         plot.margin=unit(c(0,0,0,0), "mm"), panel.grid = element_blank(), axis.text.x = element_blank()) +
+  #   scale_y_continuous(expand = c(0,0)) +
+  #   scale_x_continuous(expand = c(0,0.3)) +
+  #   facet_wrap(~scoreType, ncol = 5, scales="free_x") +
+  #   scale_fill_manual(guide=F, values = c(score_colors, "0"="white", "1"="grey90"))
+
+  geneScores.tidy.df = geneScores.df %>%
+    mutate(totalScoreX = totalScore) %>%
+    select(chr, locus, gene_id, dist, symbol, totalScoreX, total = totalScore, codingScore, colocScore, exprScore, geneDistScore, networkScore) %>%
+    gather(key="scoreType", value="score", total) %>%
+    mutate(scoreType = gsub("Score", "", scoreType))
+  if (locusPlot) {
+    geneScores.tidy.df = geneScores.tidy.df %>% arrange(desc(chr), locus, desc(dist))
+  } else {
+    geneScores.tidy.df = geneScores.tidy.df %>% arrange(desc(chr), locus, totalScoreX)
+  }
+  geneScores.tidy.df = geneScores.tidy.df %>%
+    mutate(locus = factor(as.character(locus), levels = unique(as.character(locus))),
+           symbol = factor(as.character(symbol), levels = unique(as.character(symbol))),
+           symbolPos = as.integer(symbol) + (as.integer(locus)-1) * 0.3,
+           shade = as.character(as.integer(as.factor(locus)) %% 2)) %>%
+    mutate(scoreType = factor(as.character(scoreType), levels=c("total", "coding", "coloc", "expr", "geneDist", "network")))
+  
+  plot.df = geneScores.tidy.df %>% filter(scoreType == "total")
+  p.totalScore = ggplot(geneScores.tidy.df) +
+    geom_bar(aes(x=symbolPos, y=score, fill=scoreType), data = geneScores.tidy.df, stat="identity") +
+    xlab("Gene") +
+    coord_flip() + theme_classic(8) +
+    theme(axis.text.y = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank(),
+          plot.margin=unit(c(0,0,0,0), "mm"), panel.grid = element_blank()) +
+    scale_y_continuous(expand = c(0,0)) +
+    scale_x_continuous(expand = c(0,0.3), breaks=unique(geneScores.tidy.df$symbolPos)) +
+    scale_fill_manual(guide=F, values = c(score_colors, "0"="white", "1"="grey90"))
+  #p.totalScore
+  
+  cowplot::plot_grid(plotlist = c(list(p.locus, p.totalScore), plotlist), ncol=7, align = "h", rel_widths=c(2.7, 1.4, 0.8,0.8,0.8,0.8,0.8))
+}
+
+boldGenes = c("TREM2", "ABCA7", "APP", "RIN3", "SORL1")
+scoreBarPlotSeparated4(topGenesPerLocusAndOverall.df, boldGenes = boldGenes)
+if (savePlots) {
+  pdf(file = paste0(output_root, "score.breakdown.topGenes.v4.7x5.5.pdf"), width = 5.5, height = 7)
+  print(scoreBarPlotSeparated4(topGenesPerLocusAndOverall.df))
+  dev.off()
+}
+
+```
+
+
+### Top 53 genes, version 5
+
+Similar to above, but showing the distribution of all gene scores per locus. (This same distribution is repeated for each gene at the same locus.)
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height = 7, fig.width = 5.5}
+scoreBarPlotSeparated5 = function(geneScores.df, boldGenes = c(), bars = TRUE, locusPlot = FALSE) {
+  if (!locusPlot) {
+    geneScores.df$chr = as.integer(gsub("chr", "", geneScores.df$chr))
+  }
+  topGeneScores.df = geneScores.df %>%
+    filter(topGene == T) %>%
+    select(chr, locus, gene_id, dist, symbol, totalScore, codingScore, colocScore, exprScore, geneDistScore, networkScore, topGene) %>%
+    arrange(chr, locus, totalScore)
+  # We want a dataframe that has, for each top gene at a locus, a set of scores
+  # corresponding to all the genes at the locus. Note that the topGenes will be
+  # among these but will have topGene = F, so that they will appear in the background.
+  geneScoresPerLocus.df = topGeneScores.df %>%
+    select(chr, locus, gene_id, dist, symbol) %>%
+    left_join(geneScores.df %>% select(locus, gene_id2=gene_id, dist2=dist, symbol2=symbol, totalScore, codingScore, colocScore, exprScore, geneDistScore, networkScore, topGene), by="locus") %>%
+    mutate(topGene = F)
+  newGeneScores.df = bind_rows(topGeneScores.df, geneScoresPerLocus.df)
+  
+  geneScores.tidy.df = newGeneScores.df %>%
+    select(chr, locus, gene_id, dist, symbol, gene_id2, dist2, symbol2, topGene, totalScore, codingScore, colocScore, exprScore, geneDistScore, networkScore) %>%
+    gather(key="scoreType", value="score", codingScore:networkScore) %>%
+    mutate(scoreType = gsub("Score", "", scoreType))
+  if (locusPlot) {
+    geneScores.tidy.df = geneScores.tidy.df %>% arrange(desc(chr), locus, desc(dist))
+  } else {
+    geneScores.tidy.df = geneScores.tidy.df %>% arrange(desc(chr), locus, topGene, totalScore)
+  }
+  geneScores.tidy.df = geneScores.tidy.df %>%
+    mutate(locus = factor(as.character(locus), levels = unique(as.character(locus))),
+           symbol = factor(as.character(symbol), levels = unique(as.character(symbol))),
+           symbolPos = as.integer(symbol) + (as.integer(locus)-1) * 0.3,
+           shade = as.character(as.integer(as.factor(locus)) %% 2)) %>%
+    mutate(scoreType = factor(as.character(scoreType), levels=c("total", "coding", "coloc", "expr", "geneDist", "network")))
+  
+  #geneScores.tidy.locus = geneScores.tidy.df %>% filter(scoreType == "coding") %>% mutate(scoreType = "")
+  genes.df = geneScores.tidy.df %>% select(chr, locus, symbolPos, symbol, shade, topGene) %>%
+    filter(topGene == T) %>%
+    unique() %>%
+    mutate(boldGene = if_else(symbol %in% boldGenes, "bold", "plain"),
+           symbol = if_else(symbol %in% boldGenes, paste0(symbol, "*"), as.character(symbol)))
+    
+  locus.df = genes.df %>% group_by(locus) %>%
+    summarise(locusPos = mean(symbolPos),
+              chr = as.character(first(chr)))
+  # p.locus = ggplot(geneScores.tidy.df %>% filter(scoreType == "coding") %>% mutate(scoreType = ""), aes(x=symbol)) +
+  #   geom_blank(mapping = aes(ymax=0), stat="identity", position="dodge") +
+  #   xlab("Gene") + ylab("") +
+  #   coord_flip() + theme_classic(8) +
+  #   scale_fill_manual(guide=F, values = c("0"="grey90", "1"="grey70")) +
+  #   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.margin=unit(c(0,0,0,0), "mm")) +
+  #   scale_y_continuous(expand = c(0,0)) +
+  #   scale_x_discrete(expand = c(0,0.8))
+  x_expand = ifelse(bars, 0.8, 0.4)
+  p.locus = ggplot(locus.df, aes(x=symbolPos)) +
+    geom_text(data = genes.df, mapping = aes(x=symbolPos, y=2, label = symbol, fontface = boldGene), hjust = 1, size = 2.2) +
+    geom_text(data = locus.df, mapping = aes(x=locusPos, y=1.15, label = locus), hjust = 1, size = 2.2) +
+    geom_text(data = locus.df, mapping = aes(x=locusPos, y=0.1, label = chr), hjust = 1, size = 2.2) +
+    ylab("") +
+    coord_flip(ylim = c(0, 2)) + theme_classic(8) +
+    scale_x_continuous(expand = c(0, x_expand)) +
+    theme(axis.line.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+          axis.line.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(), axis.title.y = element_blank(),
+          plot.margin=unit(c(0,0,0,0), "mm"))
+#    scale_fill_manual(guide=F, values=c("0"="cornflowerblue", "1"="firebrick")) +
+  
+  pal = hue_pal()(6)
+  #show_col(pal)
+  score_colors = c("total" = "darkorange", "coding" = pal[2], "coloc" = pal[3], "expr" = pal[4], "geneDist" = pal[5], "network" = pal[6], "grey"="grey")
+  scoreTypes = unique(geneScores.tidy.df$scoreType)
+  plotlist = list()
+  for (sctype in scoreTypes) {
+    plot.df = geneScores.tidy.df %>% filter(scoreType == sctype)
+    ym = max(plot.df$score) + 0.15
+    if (bars) {
+      p.scores = ggplot() +
+        geom_bar(data = plot.df %>% filter(topGene == T), mapping = aes(x=symbolPos, y=score, fill=scoreType), alpha=1, stat="identity") +
+        geom_point(data = plot.df %>% filter(topGene == F), mapping = aes(x=symbolPos, y=score), alpha=0.2, size=0.8)
+    } else {
+      p.scores = ggplot() +
+        geom_point(data = plot.df %>% filter(topGene == F), mapping = aes(x=symbolPos, y=score), alpha=0.2, size=0.8) +
+        geom_point(data = plot.df %>% filter(topGene == T), mapping = aes(x=symbolPos, y=score, col=scoreType), alpha=1, size=2)
+    }
+    p.scores = p.scores +
+      xlab("Gene") + coord_flip() + theme_classic(8) +
+      theme(axis.text.y = element_blank(), axis.title.y = element_blank(), axis.ticks.y = element_blank(),
+            axis.title.x = element_blank(), plot.margin=unit(c(0,0,0,0), "mm"), panel.grid = element_blank()) +
+      scale_y_continuous(expand = expand_scale(mult = 0, add = c(0,0.15)), breaks=c(0.5, 1, 1.5)) +
+      scale_x_continuous(expand = c(0,0.4)) +
+      scale_fill_manual(guide=F, values = c(score_colors, "0"="white", "1"="grey90")) +
+      scale_color_manual(guide=F, values = c(score_colors, "0"="white", "1"="grey90"))
+    if (sctype == "coding") {
+      p.scores = p.scores + scale_y_continuous(expand = expand_scale(mult = 0, add = c(0,0.25)), breaks=c(0.5, 1, 1.5))
+    }
+      
+#      geom_bar(data = plot.df %>% filter(topGene == T),
+#               mapping = aes(x=symbolPos, y=score, fill=scoreType), stat="identity") +
+    plotlist = c(plotlist, list(p.scores))
+  }
+
+  geneScores.tidy.df = newGeneScores.df %>%
+    mutate(totalScoreX = totalScore) %>%
+    select(chr, locus, gene_id, dist, symbol, gene_id2, dist2, symbol2, topGene, totalScoreX, total = totalScore, codingScore, colocScore, exprScore, geneDistScore, networkScore) %>%
+    gather(key="scoreType", value="score", total) %>%
+    mutate(scoreType = gsub("Score", "", scoreType))
+  if (locusPlot) {
+    geneScores.tidy.df = geneScores.tidy.df %>% arrange(desc(chr), locus, desc(dist))
+  } else {
+    geneScores.tidy.df = geneScores.tidy.df %>% arrange(desc(chr), locus, totalScoreX)
+  }
+  geneScores.tidy.df = geneScores.tidy.df %>%
+    mutate(locus = factor(as.character(locus), levels = unique(as.character(locus))),
+           symbol = factor(as.character(symbol), levels = unique(as.character(symbol))),
+           symbolPos = as.integer(symbol) + (as.integer(locus)-1) * 0.3,
+           shade = as.character(as.integer(as.factor(locus)) %% 2)) %>%
+    mutate(scoreType = factor(as.character(scoreType), levels=c("total", "coding", "coloc", "expr", "geneDist", "network")))
+
+  plot.df = geneScores.tidy.df %>% filter(scoreType == "total")
+  if (bars) {
+    p.totalScore = ggplot(geneScores.tidy.df) +
+      geom_bar(data = plot.df %>% filter(topGene == T), mapping = aes(x=symbolPos, y=score, fill=scoreType), alpha=1, stat="identity") +
+      geom_point(data = plot.df %>% filter(topGene == F), mapping = aes(x=symbolPos, y=score), alpha=0.2, size=0.8)
+  } else {
+    p.totalScore = ggplot(geneScores.tidy.df) +
+      geom_point(data = plot.df %>% filter(topGene == F), mapping = aes(x=symbolPos, y=score), alpha=0.2, size=0.8) +
+      geom_point(data = plot.df %>% filter(topGene == T), mapping = aes(x=symbolPos, y=score, col=scoreType), alpha=1, size=2)
+  }
+  p.totalScore = p.totalScore +
+    xlab("Gene") + coord_flip() + theme_classic(8) +
+    theme(axis.text.y = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank(),
+          plot.margin=unit(c(0,0,0,0), "mm"), panel.grid = element_blank()) +
+    scale_y_continuous(expand = c(0,0)) +
+    scale_x_continuous(expand = c(0,0.4), breaks=unique(geneScores.tidy.df$symbolPos)) +
+    scale_fill_manual(guide=F, values = c(score_colors, "0"="white", "1"="grey90")) +
+    scale_color_manual(guide=F, values = c(score_colors, "0"="white", "1"="grey90"))
+  #p.totalScore
+  
+  cowplot::plot_grid(plotlist = c(list(p.locus, p.totalScore), plotlist), ncol=7, align = "h", rel_widths=c(2.7, 1.4, 0.8,0.8,0.8,0.8,0.8))
+}
+
+numLoci = length(unique(merged.ranks.df$locus))
+numLociWithNoGeneInTopN = numLoci - length(unique(merged.ranks.df %>% filter(rank_overall <= numGenesToShow) %>% .$locus))
+topGenesPerLocusAndOverall.df = merged.ranks.df %>%
+  mutate(topGene = (rank_within_locus == 1 | rank_overall <= (numGenesToShow - numLociWithNoGeneInTopN)))
+
+
+boldGenes = c("TREM2", "ABCA7", "APP", "RIN3", "SORL1", "PLCG2")
+scoreBarPlotSeparated5(topGenesPerLocusAndOverall.df, boldGenes = boldGenes, bars = F)
+if (savePlots) {
+  pdf(file = paste0(output_root, "score.breakdown.topGenes.v5.6x5.points.pdf"), width = 5.5, height = 7)
+  print(scoreBarPlotSeparated5(topGenesPerLocusAndOverall.df, boldGenes = boldGenes, bars = F))
+  dev.off()
+}
+
+```
+
+### Top 53 genes, version 6
+
+Similar to previous, but showing bars for the given gene, rather than a point.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height = 7, fig.width = 5.5}
+# OLD version based on total score
+# merged.ranks.df = gene_evidence.df %>%
+#   arrange(desc(totalScore)) %>%
+#   group_by(locus) %>%
+#   mutate(rank_within_locus = row_number()) %>%
+#   ungroup() %>%
+#   mutate(rank_overall = row_number())
+# 
+# numLoci = length(unique(merged.ranks.df$locus))
+# numLociWithNoGeneInTopN = numLoci - length(unique(merged.ranks.df %>% filter(rank_overall <= numGenesToShow) %>% .$locus))
+# topGenesPerLocusAndOverall.df = merged.ranks.df %>%
+#   mutate(topGene = (rank_within_locus == 1 | rank_overall <= (numGenesToShow - numLociWithNoGeneInTopN)))
+# 
+# scoreBarPlotSeparated5(topGenesPerLocusAndOverall.df, boldGenes = boldGenes, bars = T)
+  
+gene_evidence.model.df  = gene_evidence.df %>%
+  mutate(sumScore = totalScore,
+         totalScore = model_prob)
+
+merged.ranks.df = gene_evidence.model.df %>%
+  arrange(desc(totalScore)) %>%
+  group_by(locus) %>%
+  mutate(rank_within_locus = row_number()) %>%
+  ungroup() %>%
+  mutate(rank_overall = row_number())
+
+# For loci where a non-coding gene was selected as the top, we add in
+# as a "top gene" the next best protein-coding gene.
+# Based on manual review, these are:
+# SCIMP, APP, USP6NL, HS3ST1
+
+numLoci = length(unique(merged.ranks.df$locus))
+numLociWithNoGeneInTopN = numLoci - length(unique(merged.ranks.df %>% filter(rank_overall <= numGenesToShow) %>% .$locus))
+topGenesPerLocusAndOverall.df = merged.ranks.df %>%
+  mutate(topGene = (rank_within_locus == 1 | symbol %in% c("SCIMP", "APP", "USP6NL", "HS3ST1")))
+numSelected = sum(topGenesPerLocusAndOverall.df$topGene)
+extraGenes.df = topGenesPerLocusAndOverall.df %>%
+  filter(!topGene) %>%
+  arrange(rank_overall) %>%
+  filter(row_number() <= (numGenesToShow - numSelected))
+
+topGenesPerLocusAndOverall.df = topGenesPerLocusAndOverall.df %>%
+  mutate(topGene = topGene | gene_id %in% extraGenes.df$gene_id)
+sum(topGenesPerLocusAndOverall.df$topGene)
+
+# test.df = topGenesPerLocusAndOverall.df %>% select(locus, symbol, totalScore, geneDistScore, codingScore, colocScore, exprScore, networkScore)
+# sum(is.na(test.df))
+scoreBarPlotSeparated5(topGenesPerLocusAndOverall.df, boldGenes = boldGenes, bars = T)
+
+
+if (savePlots) {
+  pdf(file = paste0(output_root, "score.breakdown.topGenes.v5.6x5.bars.pdf"), width = 5.5, height = 7)
+  print(scoreBarPlotSeparated5(topGenesPerLocusAndOverall.df, boldGenes = boldGenes, bars = T))
+  dev.off()
+}
+```
+
+## Plots per locus
+
+Loci are grouped in an arbitrary order so that bars are a reasonable size for all loci.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.height = 7, fig.width = 5.5, eval=FALSE}
+scoreBarPlotSeparatedLocus = function(geneScores.df, locusPlot = FALSE) {
+  geneScores.tidy.df = geneScores.df %>%
+    select(chr, locus, gene_id, dist, symbol, totalScore, codingScore, colocScore, exprScore, geneDistScore, networkScore) %>%
+    gather(key="scoreType", value="score", codingScore:networkScore) %>%
+    mutate(scoreType = gsub("Score", "", scoreType))
+    geneScores.tidy.df = geneScores.tidy.df %>% arrange(desc(chr), locus, desc(dist)) %>%
+    mutate(locus = factor(as.character(locus), levels = unique(as.character(locus))),
+           symbol = factor(as.character(symbol), levels = unique(as.character(symbol))),
+           symbolPos = as.integer(symbol) + (as.integer(locus)-1) * 0.3,
+           shade = as.character(as.integer(as.factor(locus)) %% 2)) %>%
+    mutate(scoreType = factor(as.character(scoreType), levels=c("total", "coding", "coloc", "expr", "geneDist", "network")))
+  
+  genes.df = geneScores.tidy.df %>% select(chr, locus, symbolPos, symbol, shade) %>% unique()
+  locus.df = genes.df %>% group_by(locus) %>%
+    summarise(locusPos = mean(symbolPos),
+              chr = as.character(first(chr)))
+  p.locus = ggplot() +
+    geom_text(data = genes.df, mapping = aes(x=symbolPos, y=2, label = symbol), hjust = 1, size = 2) +
+    geom_text(data = locus.df, mapping = aes(x=locusPos, y=1.1, label = locus), hjust = 1, size = 2, fontface="bold") +
+    geom_text(data = locus.df, mapping = aes(x=locusPos, y=0.2, label = chr), hjust = 1, size = 2) +
+    ylab("") +
+    coord_flip(ylim = c(0, 2)) + theme_classic(8) +
+    scale_x_continuous(expand = c(0, 0.8)) +
+    theme(axis.line.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+          axis.line.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(), axis.title.y = element_blank(),
+          plot.margin=unit(c(0,0,0,0), "mm"))
+
+  pal = hue_pal()(6)
+  score_colors = c("total" = "darkorange", "coding" = pal[2], "coloc" = pal[3], "expr" = pal[4], "geneDist" = pal[5], "network" = pal[6], "grey"="grey")
+  scoreTypes = unique(geneScores.tidy.df$scoreType)
+  plotlist = list()
+  for (sctype in scoreTypes) {
+    plot.df = geneScores.tidy.df %>% filter(scoreType == sctype)
+    ym = max(plot.df$score) + 0.15
+    p.scores = ggplot(data=plot.df) +
+      geom_bar(aes(x=symbolPos, y=score, fill=scoreType), stat="identity") +
+      xlab("Gene") +
+      coord_flip() + theme_classic(8) +
+      theme(axis.text.y = element_blank(), axis.title.y = element_blank(), axis.ticks.y = element_blank(),
+            axis.title.x = element_blank(), plot.margin=unit(c(0,0,0,0), "mm"), panel.grid = element_blank()) +
+      scale_y_continuous(expand = expand_scale(mult = 0, add = c(0,0.15)), breaks=c(0.5, 1, 1.5),
+                         limits = c(0, ifelse(sctype == "coding", 1.5, 1))) +
+      scale_x_continuous(expand = c(0,0.3)) +
+      scale_fill_manual(guide=F, values = c(score_colors, "0"="white", "1"="grey90"))
+    if (sctype == "network") {
+      p.scores = p.scores + theme(plot.margin=unit(c(0,2,0,0), "mm"))
+    }
+    plotlist = c(plotlist, list(p.scores))
+  }
+  
+  geneScores.tidy.df = geneScores.df %>%
+    mutate(totalScoreX = totalScore) %>%
+    select(chr, locus, gene_id, dist, symbol, totalScoreX, total = totalScore, codingScore, colocScore, exprScore, geneDistScore, networkScore) %>%
+    gather(key="scoreType", value="score", total) %>%
+    mutate(scoreType = gsub("Score", "", scoreType)) %>%
+    arrange(desc(chr), locus, desc(dist)) %>%
+    mutate(locus = factor(as.character(locus), levels = unique(as.character(locus))),
+           symbol = factor(as.character(symbol), levels = unique(as.character(symbol))),
+           symbolPos = as.integer(symbol) + (as.integer(locus)-1) * 0.3,
+           shade = as.character(as.integer(as.factor(locus)) %% 2)) %>%
+    mutate(scoreType = factor(as.character(scoreType), levels=c("total", "coding", "coloc", "expr", "geneDist", "network")))
+  
+  plot.df = geneScores.tidy.df %>% filter(scoreType == "total")
+  p.totalScore = ggplot(geneScores.tidy.df) +
+    geom_bar(aes(x=symbolPos, y=score, fill=scoreType), data = geneScores.tidy.df, stat="identity") +
+    xlab("Gene") +
+    coord_flip() + theme_classic(8) +
+    theme(axis.text.y = element_blank(), axis.title.y = element_blank(), axis.title.x = element_blank(),
+          plot.margin=unit(c(0,0,0,0), "mm"), panel.grid = element_blank()) +
+    scale_y_continuous(expand = c(0,0)) +
+    scale_x_continuous(expand = c(0,0.3), breaks=unique(geneScores.tidy.df$symbolPos)) +
+    scale_fill_manual(guide=F, values = c(score_colors, "0"="white", "1"="grey90"))
+  #p.totalScore
+  
+  cowplot::plot_grid(plotlist = c(list(p.locus, p.totalScore), plotlist), ncol=7, align = "h", rel_widths=c(2.7, 2, 1,1,1,1,1))
+}
+
+loci = unique(gene_evidence.df$locus)
+locus_summary = gene_evidence.df %>% group_by(locus) %>% summarise(numGenes = n())
+#for (locusSel in locus_summary %>% filter(numGenes < 10) %>% .$locus) {
+#  print(scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == locusSel)))
+#}
+
+header.df = data.frame(pos = c(3.3,5,6,7,8,9.1), text = c("total", "coding", "coloc", "expr", "dist", "network"))
+p.header = ggplot(header.df) + geom_text(aes(label=text, x=pos, y=1), size=2.7) + theme_nothing() + xlim(c(0,9.2))
+
+p1 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "CCDC6"))
+p2 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "CD2AP"))
+p3 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "CLNK"))
+p4 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "SORL1"))
+p5 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "IKZF1"))
+cowplot::plot_grid(plotlist = list(p.header, p1, p2, p3, p4, p5), ncol=1, rel_heights = c(0.7,4,4,4,4,4))
+
+p6 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "TMEM163"))
+p7 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "APP-ADAMTS1"))
+p8 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "NCK2"))
+p9 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "SLC24A4"))
+cowplot::plot_grid(plotlist = list(p.header, p6, p7, p8, p9), ncol=1, rel_heights = c(0.7,5,5,5,5))
+
+p10 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "CASS4"))
+p11 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "PICALM"))
+p12 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "SPRED2"))
+cowplot::plot_grid(plotlist = list(p.header, p10, p11, p12), ncol=1, rel_heights = c(0.7,7,7,7))
+
+p13 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "TSPAN14"))
+p14 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "FERMT2"))
+p15 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "ECHDC3"))
+cowplot::plot_grid(plotlist = list(p.header, p13, p14, p15), ncol=1, rel_heights = c(0.7,7,7,7))
+
+p16 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "APH1B"))
+p17 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "BIN1"))
+p18 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "CR1"))
+cowplot::plot_grid(plotlist = list(p.header, p16, p17, p18), ncol=1, rel_heights = c(0.7,7,7,7))
+
+p19 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "PLCG2"))
+p20 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "PTK2B-CLU"))
+p21 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "INPP5D"))
+cowplot::plot_grid(plotlist = list(p.header, p19, p20, p21), ncol=1, rel_heights = c(0.7,7,7,7))
+
+p22 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "MS4A4A"))
+p23 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "SPPL2A"))
+cowplot::plot_grid(plotlist = list(p.header, p22, p23), ncol=1, rel_heights = c(0.7,10,10))
+
+p24 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "TREM2"))
+p25 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "ADAM10"))
+cowplot::plot_grid(plotlist = list(p.header, p24, p25), ncol=1, rel_heights = c(0.7,10,10))
+
+p26 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "ACE"))
+p27 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "EPHA1"))
+cowplot::plot_grid(plotlist = list(p.header, p26, p27), ncol=1, rel_heights = c(0.7,10,10))
+
+p28 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "SPI1"))
+cowplot::plot_grid(plotlist = list(p.header, p28), ncol=1, rel_heights = c(0.7,20))
+
+p29 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "TSPOAP1"))
+cowplot::plot_grid(plotlist = list(p.header, p29), ncol=1, rel_heights = c(0.7,20))
+
+p30 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "HLA"))
+cowplot::plot_grid(plotlist = list(p.header, p30), ncol=1, rel_heights = c(0.7,20))
+
+p31 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "ADAMTS4"))
+cowplot::plot_grid(plotlist = list(p.header, p31), ncol=1, rel_heights = c(0.7,20))
+
+p32 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "SCIMP"))
+cowplot::plot_grid(plotlist = list(p.header, p32), ncol=1, rel_heights = c(0.7,20))
+
+p33 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "PILRA"))
+cowplot::plot_grid(plotlist = list(p.header, p33), ncol=1, rel_heights = c(0.7,20))
+
+p34 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "VKORC1"))
+cowplot::plot_grid(plotlist = list(p.header, p34), ncol=1, rel_heights = c(0.7,20))
+
+p35 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "ABCA7"))
+cowplot::plot_grid(plotlist = list(p.header, p35), ncol=1, rel_heights = c(0.7,20))
+
+p36 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "APOE"))
+cowplot::plot_grid(plotlist = list(p.header, p36), ncol=1, rel_heights = c(0.7,20))
+
+p37 = scoreBarPlotSeparatedLocus(gene_evidence.df %>% filter(locus == "CD33"))
+cowplot::plot_grid(plotlist = list(p.header, p37), ncol=1, rel_heights = c(0.7,20))
+
+if (savePlots) {
+  pdf(file = paste0(output_root, "score.breakdown.perLocus.pdf"), width = 6, height = 6)
+  print(cowplot::plot_grid(plotlist = list(p.header, p1, p2, p3, p4, p5), ncol=1, rel_heights = c(0.7,4,4,4,4,4)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p6, p7, p8, p9), ncol=1, rel_heights = c(0.7,5,5,5,5)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p10, p11, p12), ncol=1, rel_heights = c(0.7,7,7,7)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p13, p14, p15), ncol=1, rel_heights = c(0.7,7,7,7)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p16, p17, p18), ncol=1, rel_heights = c(0.7,7,7,7)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p19, p20, p21), ncol=1, rel_heights = c(0.7,7,7,7)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p22, p23), ncol=1, rel_heights = c(0.7,10,10)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p24, p25), ncol=1, rel_heights = c(0.7,10,10)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p26, p27), ncol=1, rel_heights = c(0.7,10,10)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p28), ncol=1, rel_heights = c(0.7,20)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p29), ncol=1, rel_heights = c(0.7,20)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p30), ncol=1, rel_heights = c(0.7,20)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p31), ncol=1, rel_heights = c(0.7,20)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p32), ncol=1, rel_heights = c(0.7,20)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p33), ncol=1, rel_heights = c(0.7,20)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p34), ncol=1, rel_heights = c(0.7,20)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p35), ncol=1, rel_heights = c(0.7,20)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p36), ncol=1, rel_heights = c(0.7,20)))
+  print(cowplot::plot_grid(plotlist = list(p.header, p37), ncol=1, rel_heights = c(0.7,20)))
+  dev.off()
+}
+```
+

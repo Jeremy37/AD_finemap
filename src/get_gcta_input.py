@@ -17,7 +17,7 @@ freq_dict = {i.split()[0]:[i.split()[3],i.split()[4],i.split()[5]] for i in gzip
 #1	693625	rs190214723	T	C	-0.0163	0.0685	0.812	-0.00180805029748	0.0439661246245	9.1E-01	-0.00603629002041	0.0370004463748	0.8704074146487125	--+	0	0.8586891674636307	0.950775	0.438968
 
 # Numbers are: Kunkle cases + control + (GB proxy cases + GB cases)/4 + GB controls/4
-n = str(21982+41944+(52791+3046)/4+(355900)/4)
+n = str(21982+41944+(54939+898)/4+(355900)/4)
 for do_chrom in range(1,23)[::-1]:
     do_chrom = str(do_chrom)
     print do_chrom
