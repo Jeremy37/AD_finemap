@@ -188,16 +188,22 @@ cat AD.loci.tsv | grep -v "HLA" > AD.loci.exceptHLA.tsv
 # We only include SNPs with MAF > 0.002, since this is at the limit of our accuracy
 # for LD estimation (20 individuals in 10,000).
 submitJobs.py --MEM 10000 -n 5 -j get_finemapping_input.exceptHLA -q yesterday \
-  -c "python $SRC/get_finemapping_input.py --locus_file AD.loci.exceptHLA.tsv --gwas_file $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz --window 500000 --min_freq 0.002 --min_info 0.855 --hetp_threshold 0.001 --outdir finemap/input"
+  -c "python $SRC/get_finemapping_input.py --locus_file AD.loci.exceptHLA.tsv --gwas_file $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz --window 500000 --min_freq 0.002 --min_info 0.85 --hetp_threshold 0.001 --outdir finemap/input"
 submitJobs.py --MEM 19000 -n 5 -j get_finemapping_input.HLA -q yesterday \
-  -c "python $SRC/get_finemapping_input.py --locus_file AD.loci.HLA.tsv --gwas_file $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz --window 500000 --min_freq 0.002 --min_info 0.855 --hetp_threshold 0.001 --outdir finemap/input"
+  -c "python $SRC/get_finemapping_input.py --locus_file AD.loci.HLA.tsv --gwas_file $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz --window 500000 --min_freq 0.002 --min_info 0.85 --hetp_threshold 0.001 --outdir finemap/input"
 submitJobs.py --MEM 10000 -n 5 -j get_finemapping_input.TREM2 -q yesterday \
-  -c "python $SRC/get_finemapping_input.py --locus_file AD.loci.TREM2.tsv --gwas_file $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz --window 500000 --min_freq 0.0019 --min_info 0.855 --hetp_threshold 0.001 --outdir finemap/input"
+  -c "python $SRC/get_finemapping_input.py --locus_file AD.loci.TREM2.tsv --gwas_file $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz --window 500000 --min_freq 0.0019 --min_info 0.85 --hetp_threshold 0.001 --outdir finemap/input"
 
 # Running this mainly to get each of the meta-analysis locus summary stat files
 cat AD.IGAP1_GWAX.1e-5_indep.hits | awk '$11 > 4e-7' > AD.loci.not_gwsig.tsv
 submitJobs.py --MEM 28000 -n 5 -j get_finemapping_input.1e-5 -q yesterday \
   -c "python $SRC/get_finemapping_input.py --locus_file AD.loci.not_gwsig.tsv --gwas_file $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz --window 500000 --min_freq 0.002 --min_info 0.855 --hetp_threshold 0.001 --outdir finemap/input_1e-5"
+
+# Determine how many SNPs were excluded by different criteria. First paste together
+# all of the *.excluded_snps files and *.snplist files that were output.
+cat finemap/input/*.excluded_snps > finemap/input/all_excluded_snps.txt
+cat finemap/input/*.snplist > finemap/input/all.snplist.txt
+Rscript $SRC/count_snp_exclusions.R
 
 # The above step also extracts the meta-analysis SNPs at each associated locus,
 # and now we merge these into a single file for later use.
@@ -859,6 +865,289 @@ Rscript $SRC/get_genes_bed.R
 
 # Run manually
 merge_gene_evidence.Rmd
+
+
+################################################################################
+# LD score regression
+
+# Do these steps in a separate dir
+git clone https://github.com/bulik/ldsc.git
+cd ldsc
+conda env create --file environment.yml
+# When I ran munge_sumstats.py it would hang. This seemed to be a numpy problem / conflict.
+# The below fixed it.
+conda install numpy=1.13.3
+
+cd $ROOT
+mkdir ldsc; cd ldsc
+# Use the precomputed LD scores provided by alkesgroup
+wget https://data.broadinstitute.org/alkesgroup/LDSCORE/eur_w_ld_chr.tar.bz2
+wget https://data.broadinstitute.org/alkesgroup/LDSCORE/w_hm3.snplist.bz2
+tar -jxvf eur_w_ld_chr.tar.bz2
+bunzip2 w_hm3.snplist.bz2
+
+# Convert Kunkle sumstats to a format accepted by LDSC
+# N for Kunkle: 21982 + 41944 = 63926
+(echo -e "SNP\tA1\tA2\tbeta\tp\tN";
+ zcat $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | sed '1d' | awk 'BEGIN{OFS="\t"}{N=63926; print $3,$4,$5,$6,$8,N}') \
+ > AD.kunkle.sumstats_in.tsv
+# zcat summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | awk 'BEGIN{OFS="\t"}{N=63926; print $3,$4,$5,$6,$14,N}') | head
+
+source activate ldsc
+
+$JS/software/ldsc/munge_sumstats.py \
+--sumstats AD.kunkle.sumstats_in.tsv \
+--N 63926 \
+--out AD.kunkle \
+--merge-alleles w_hm3.snplist
+
+# LD Score Regression - heritability
+$JS/software/ldsc/ldsc.py \
+--h2 AD.kunkle.sumstats.gz \
+--ref-ld-chr eur_w_ld_chr/ \
+--w-ld-chr eur_w_ld_chr/ \
+--out AD.kunkle.h2
+
+# Convert AD proxy sumstats to a format accepted by LDSC
+# N for AD proxy: (54939+898)/4+(355900)/4 = 102934
+#(echo -e "SNP\tA1\tA2\tbeta\tp\tN";
+# zcat $ROOT//summary_stats/AD.proxy_exclude_firsts.bgen.stats.bgz | sed '1d' | awk 'BEGIN{OFS="\t"}{N=102934; print $1,$5,$6,$11,$16,N}') \
+# > AD.proxy.sumstats_in.tsv
+
+(echo -e "SNP\tA1\tA2\tbeta\tp\tN";
+ zcat $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | sed '1d' | awk 'BEGIN{OFS="\t"}{N=102934; print $3,$4,$5,$9,$11,N}') \
+ > AD.proxy.sumstats_in.tsv
+
+$JS/software/ldsc/munge_sumstats.py \
+--sumstats AD.proxy.sumstats_in.tsv \
+--N 102934 \
+--out AD.proxy \
+--merge-alleles w_hm3.snplist
+
+# LD Score Regression - heritability
+$JS/software/ldsc/ldsc.py \
+--h2 AD.proxy.sumstats.gz \
+--ref-ld-chr eur_w_ld_chr/ \
+--w-ld-chr eur_w_ld_chr/ \
+--out AD.proxy.h2
+
+# LD Score Regression - heritability for both AD proxy & Kunkle, and genetic correlation
+$JS/software/ldsc/ldsc.py \
+--rg AD.kunkle.sumstats.gz,AD.proxy.sumstats.gz \
+--ref-ld-chr eur_w_ld_chr/ \
+--w-ld-chr eur_w_ld_chr/ \
+--out AD.kunkle_and_proxy.rg
+
+
+# Convert meta-analysis sumstats to a format accepted by LDSC
+# N for meta: N for Kunkle + N for proxy = 21982+41944+(54939+898)/4+(355900)/4 = 166860
+(echo -e "SNP\tA1\tA2\tbeta\tp\tN";
+ zcat $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | sed '1d' | awk 'BEGIN{OFS="\t"}{N=166860; print $3,$4,$5,$12,$14,N}') \
+ > AD.meta.sumstats_in.tsv
+$JS/software/ldsc/munge_sumstats.py \
+--sumstats AD.meta.sumstats_in.tsv \
+--N 166860 \
+--out AD.meta \
+--merge-alleles w_hm3.snplist
+
+# LD Score Regression - AD proxy
+$JS/software/ldsc/ldsc.py \
+--h2 AD.meta.sumstats.gz \
+--ref-ld-chr eur_w_ld_chr/ \
+--w-ld-chr eur_w_ld_chr/ \
+--out AD.meta.h2
+
+
+# Check for the exclude_seconds sumstats
+(echo -e "SNP\tA1\tA2\tbeta\tp\tN";
+ zcat $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_seconds_v5.meta.tsv.bgz | sed '1d' | awk 'BEGIN{OFS="\t"}{N=102934; print $3,$4,$5,$9,$11,N}') \
+ > AD.proxy.exclude_seconds.sumstats_in.tsv
+
+$JS/software/ldsc/munge_sumstats.py \
+--sumstats AD.proxy.exclude_seconds.sumstats_in.tsv \
+--N 102934 \
+--out AD.proxy.exclude_seconds \
+--merge-alleles w_hm3.snplist
+
+# LD Score Regression - heritability
+$JS/software/ldsc/ldsc.py \
+--h2 AD.proxy.exclude_seconds.sumstats.gz \
+--ref-ld-chr eur_w_ld_chr/ \
+--w-ld-chr eur_w_ld_chr/ \
+--out AD.proxy.exclude_seconds.h2
+
+
+#############################################
+# Do it all again, excluding the APOE locus
+# Removing SNPs at chr19:42,000,000-48,000,000
+
+# Convert Kunkle sumstats to a format accepted by LDSC
+# N for Kunkle: 21982 + 41944 = 63926
+(echo -e "SNP\tA1\tA2\tbeta\tp\tN";
+ zcat $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | sed '1d' | awk '$1 != 19 || $2 < 42000000 || $2 > 48000000' | awk 'BEGIN{OFS="\t"}{N=63926; print $3,$4,$5,$6,$8,N}') \
+ > AD.kunkle.sumstats_in.excl_APOE.tsv
+# zcat summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | awk 'BEGIN{OFS="\t"}{N=63926; print $3,$4,$5,$6,$14,N}') | head
+
+source activate ldsc
+
+$JS/software/ldsc/munge_sumstats.py \
+--sumstats AD.kunkle.sumstats_in.excl_APOE.tsv \
+--N 63926 \
+--out AD.kunkle.excl_APOE \
+--merge-alleles w_hm3.snplist
+
+# LD Score Regression - heritability
+$JS/software/ldsc/ldsc.py \
+--h2 AD.kunkle.excl_APOE.sumstats.gz \
+--ref-ld-chr eur_w_ld_chr/ \
+--w-ld-chr eur_w_ld_chr/ \
+--out AD.kunkle.excl_APOE.h2
+
+# Convert AD proxy sumstats to a format accepted by LDSC
+# N for AD proxy: (54939+898)/4+(355900)/4 = 102934
+#(echo -e "SNP\tA1\tA2\tbeta\tp\tN";
+# zcat $ROOT//summary_stats/AD.proxy_exclude_firsts.bgen.stats.bgz | sed '1d' | awk 'BEGIN{OFS="\t"}{N=102934; print $1,$5,$6,$11,$16,N}') \
+# > AD.proxy.sumstats_in.tsv
+
+(echo -e "SNP\tA1\tA2\tbeta\tp\tN";
+ zcat $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | sed '1d' | awk '$1 != 19 || $2 < 42000000 || $2 > 48000000' | awk 'BEGIN{OFS="\t"}{N=102934; print $3,$4,$5,$9,$11,N}') \
+ > AD.proxy.excl_APOE.sumstats_in.tsv
+
+$JS/software/ldsc/munge_sumstats.py \
+--sumstats AD.proxy.excl_APOE.sumstats_in.tsv \
+--N 102934 \
+--out AD.proxy.excl_APOE \
+--merge-alleles w_hm3.snplist
+
+# LD Score Regression - heritability
+$JS/software/ldsc/ldsc.py \
+--h2 AD.proxy.excl_APOE.sumstats.gz \
+--ref-ld-chr eur_w_ld_chr/ \
+--w-ld-chr eur_w_ld_chr/ \
+--out AD.proxy.excl_APOE.h2
+
+# LD Score Regression - heritability for both AD proxy & Kunkle, and genetic correlation
+$JS/software/ldsc/ldsc.py \
+--rg AD.kunkle.excl_APOE.sumstats.gz,AD.proxy.excl_APOE.sumstats.gz \
+--ref-ld-chr eur_w_ld_chr/ \
+--w-ld-chr eur_w_ld_chr/ \
+--out AD.kunkle_and_proxy.excl_APOE.rg
+
+
+# Convert meta-analysis sumstats to a format accepted by LDSC
+# N for meta: N for Kunkle + N for proxy = 21982+41944+(54939+898)/4+(355900)/4 = 166860
+(echo -e "SNP\tA1\tA2\tbeta\tp\tN";
+ zcat $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | sed '1d' | awk '$1 != 19 || $2 < 42000000 || $2 > 48000000' | awk 'BEGIN{OFS="\t"}{N=63926; print $3,$4,$5,$12,$14,N}') \
+ > AD.meta.excl_APOE.sumstats_in.tsv
+$JS/software/ldsc/munge_sumstats.py \
+--sumstats AD.meta.excl_APOE.sumstats_in.tsv \
+--N 166860 \
+--out AD.meta.excl_APOE \
+--merge-alleles w_hm3.snplist
+
+# LD Score Regression - AD proxy
+$JS/software/ldsc/ldsc.py \
+--h2 AD.meta.excl_APOE.sumstats.gz \
+--ref-ld-chr eur_w_ld_chr/ \
+--w-ld-chr eur_w_ld_chr/ \
+--out AD.meta.excl_APOE.h2
+
+#############################################
+# Do LDSC for the Gr@ace study
+cd $ROOT/ldsc
+wget ftp://ftp.ebi.ac.uk/pub/databases/gwas/summary_statistics/Moreno-GrauS_31473137_GCST009020/GRACE_StageI.txt
+gzip GRACE_StageI.txt
+(echo -e "CHR\tPos\tA1\tA2\tBeta\tSE\tP\tDirection\trsID"; zcat GRACE_StageI.txt.gz | sed '1d') > GRACE_StageI.sumstats_in.tsv
+#wget ftp://ftp.ebi.ac.uk/pub/databases/gwas/summary_statistics/Moreno-GrauS_31473137_GCST009019/GRACEStageI_dbGAP.txt
+#gzip GRACEStageI_dbGAP.txt
+#(echo -e "CHR\tPos\tA1\tA2\tBeta\tSE\tP\tDirection\trsID"; zcat GRACEStageI_dbGAP.txt.gz | sed '1d') > GRACEStageI_dbGAP.sumstats_in.tsv
+
+# N = 4120 cases + 3289 controls = 7409
+$JS/software/ldsc/munge_sumstats.py \
+--sumstats GRACE_StageI.sumstats_in.tsv \
+--N 7409 \
+--out AD.Grace \
+--merge-alleles w_hm3.snplist
+
+$JS/software/ldsc/ldsc.py \
+--h2 AD.Grace.sumstats.gz \
+--ref-ld-chr eur_w_ld_chr/ \
+--w-ld-chr eur_w_ld_chr/ \
+--out AD.Grace.h2
+
+$JS/software/ldsc/ldsc.py \
+--rg AD.kunkle.sumstats.gz,AD.proxy.sumstats.gz,AD.Grace.sumstats.gz \
+--ref-ld-chr eur_w_ld_chr/ \
+--w-ld-chr eur_w_ld_chr/ \
+--out AD.kunkle_proxy_grace.rg
+
+# Removing SNPs at chr19:42,000,000-48,000,000
+(echo -e "CHR\tPos\tA1\tA2\tBeta\tSE\tP\tDirection\trsID";
+ zcat GRACE_StageI.txt.gz | sed '1d' | awk '$1 != 19 || $2 < 42000000 || $2 > 48000000') \
+ > GRACE_StageI.sumstats_in.excl_APOE.tsv
+
+$JS/software/ldsc/munge_sumstats.py \
+--sumstats GRACE_StageI.sumstats_in.excl_APOE.tsv \
+--N 7409 \
+--out AD.Grace.excl_APOE \
+--merge-alleles w_hm3.snplist
+
+$JS/software/ldsc/ldsc.py \
+--h2 AD.Grace.excl_APOE.sumstats.gz \
+--ref-ld-chr eur_w_ld_chr/ \
+--w-ld-chr eur_w_ld_chr/ \
+--out AD.Grace.excl_APOE.h2
+
+$JS/software/ldsc/ldsc.py \
+--rg AD.kunkle.excl_APOE.sumstats.gz,AD.proxy.excl_APOE.sumstats.gz,AD.Grace.excl_APOE.sumstats.gz \
+--ref-ld-chr eur_w_ld_chr/ \
+--w-ld-chr eur_w_ld_chr/ \
+--out AD.kunkle_proxy_grace.excl_APOE.rg
+
+# The results show unreasonably high h2 for the Gr@ace study, and with a high ratio
+# indicating that it is not due to real polygenic signal. When I run the genetic
+# correlation analysis, it dies with an error for the Gr@ace study.
+
+
+###############################################################################
+# Check for replication of AD loci in other datasets
+mkdir $ROOT/replication
+cd $ROOT/replication
+
+ln -s $ROOT/ldsc/GRACE_StageI.txt.gz GRACE_StageI.txt.gz
+# Get lead SNP per locus
+sed '1d' $ROOT/AD.loci.tsv | cut -f 2 | sed 's/_.*//g' > AD_lead_snps.txt
+# Also get all independent SNPs across loci
+sed '1d' $ROOT/AD.loci.tsv | awk '$15 != "APOE"' | cut -f 4 | sed 's/_[^,]*//g;s/,/\n/g' > AD_indep_snps.txt
+sed '1d' $ROOT/AD.loci.tsv | awk '$15 == "APOE"' | cut -f 2 | sed 's/_.*//g' >> AD_indep_snps.txt
+
+# Manually add in linked SNPs to account for some that are missing in FinnGen
+# AD_lead_snps.plus.txt
+# AD_indep_snps.plus.txt
+
+# Gr@ace Spanish AD GWAS
+(zcat GRACE_StageI.txt.gz | head -n 1; zgrep -wFf AD_lead_snps.plus.txt GRACE_StageI.txt.gz) | tr ' ' '\t' > GRACE_StageI.AD_lead_snps.txt
+(zcat GRACE_StageI.txt.gz | head -n 1; zgrep -wFf AD_indep_snps.plus.txt GRACE_StageI.txt.gz) | tr ' ' '\t' > GRACE_StageI.AD_indep_snps.txt
+
+# FinnGen - two definitions of AD
+wget https://storage.googleapis.com/finngen-public-data-r3/summary_stats/finngen_r3_AD_LO.gz
+wget https://storage.googleapis.com/finngen-public-data-r3/summary_stats/finngen_r3_G6_AD_WIDE.gz
+(zcat finngen_r3_G6_AD_WIDE.gz | head -n 1; zgrep -wFf AD_lead_snps.plus.txt finngen_r3_G6_AD_WIDE.gz) > finngen_r3_G6_AD_WIDE.AD_lead_snps.txt
+(zcat finngen_r3_G6_AD_WIDE.gz | head -n 1; zgrep -wFf AD_lead_snps.plus.txt finngen_r3_AD_LO.gz) > finngen_r3_AD_LO.AD_lead_snps.txt
+
+(zcat finngen_r3_G6_AD_WIDE.gz | head -n 1; zgrep -wFf AD_indep_snps.plus.txt finngen_r3_G6_AD_WIDE.gz) > finngen_r3_G6_AD_WIDE.AD_indep_snps.txt
+(zcat finngen_r3_G6_AD_WIDE.gz | head -n 1; zgrep -wFf AD_indep_snps.plus.txt finngen_r3_AD_LO.gz) > finngen_r3_AD_LO.AD_indep_snps.txt
+
+(zcat $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | head -n 1;
+ zgrep -wFf AD_lead_snps.plus.txt $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz) \
+ > AD.IGAP1_GWAX_exclude_firsts_v5.meta.AD_lead_snps.txt
+
+(zcat $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | head -n 1;
+ zgrep -wFf AD_indep_snps.plus.txt $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz) \
+ > AD.IGAP1_GWAX_exclude_firsts_v5.meta.AD_indep_snps.txt
+
+
+Rscript $SRC/check_replication.R
 
 
 ################################################################################

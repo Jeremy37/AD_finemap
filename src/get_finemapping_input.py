@@ -112,12 +112,6 @@ for i in open(args.locus_file, 'r'):
             if math.isnan(p):
                 print >>write_missing, snp + "\tp is nan"
                 continue
-            if het_p < args.hetp_threshold:
-                print >>write_missing, snp + "\thet_p value {} below threshold {}".format(het_p, args.hetp_threshold)
-                continue
-            if float(info) < args.min_info:
-                print >>write_missing, snp + "\tSNP info ({}) is less than cutoff of {}".format(info, args.min_info)
-                continue
             if not snp in a1_dict:
                 # Try the reverse order of alleles
                 snp = "{}_{}_{}".format(snpid, a2, a1)
@@ -150,6 +144,13 @@ for i in open(args.locus_file, 'r'):
             if freq < args.min_freq:
                 print >>write_missing, snp + "\tSNP has freq <= {}".format(args.min_freq)
                 continue
+            if het_p < args.hetp_threshold:
+                print >>write_missing, snp + "\thet_p value {} below threshold {}".format(het_p, args.hetp_threshold)
+                continue
+            if float(info) < args.min_info:
+                print >>write_missing, snp + "\tSNP info ({}) is less than cutoff of {}".format(info, args.min_info)
+                continue
+                
             print >>finemap_z_file,     "{} {} {} {} {} {} {} {}".format(snp, chrom, pos, a1, a2, freq, beta, se)
             print >>paintor_locus_file, "{} {} {} {} {} {} {} {} {}".format(snp, chrom, pos, a1, a2, freq, beta, se, z)
             print >>write_snplist, snp
