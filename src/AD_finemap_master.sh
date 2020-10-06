@@ -11,6 +11,7 @@
 ROOT=/path/to/AD_finemap
 SRC=$ROOT/src
 GWAS_NAME=AD.meta
+#SWDIR=define here
 JS=/lustre/scratch115/realdata/mdt3/projects/otcoregen2/jeremys
 ROOT=$JS/AD_finemap
 SRC=$ROOT/src
@@ -895,14 +896,14 @@ bunzip2 w_hm3.snplist.bz2
 
 source activate ldsc
 
-$JS/software/ldsc/munge_sumstats.py \
+$SWDIR/ldsc/munge_sumstats.py \
 --sumstats AD.kunkle.sumstats_in.tsv \
 --N 63926 \
 --out AD.kunkle \
 --merge-alleles w_hm3.snplist
 
 # LD Score Regression - heritability
-$JS/software/ldsc/ldsc.py \
+$SWDIR/ldsc/ldsc.py \
 --h2 AD.kunkle.sumstats.gz \
 --ref-ld-chr eur_w_ld_chr/ \
 --w-ld-chr eur_w_ld_chr/ \
@@ -918,21 +919,21 @@ $JS/software/ldsc/ldsc.py \
  zcat $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | sed '1d' | awk 'BEGIN{OFS="\t"}{N=102934; print $3,$4,$5,$9,$11,N}') \
  > AD.proxy.sumstats_in.tsv
 
-$JS/software/ldsc/munge_sumstats.py \
+$SWDIR/ldsc/munge_sumstats.py \
 --sumstats AD.proxy.sumstats_in.tsv \
 --N 102934 \
 --out AD.proxy \
 --merge-alleles w_hm3.snplist
 
 # LD Score Regression - heritability
-$JS/software/ldsc/ldsc.py \
+$SWDIR/ldsc/ldsc.py \
 --h2 AD.proxy.sumstats.gz \
 --ref-ld-chr eur_w_ld_chr/ \
 --w-ld-chr eur_w_ld_chr/ \
 --out AD.proxy.h2
 
 # LD Score Regression - heritability for both AD proxy & Kunkle, and genetic correlation
-$JS/software/ldsc/ldsc.py \
+$SWDIR/ldsc/ldsc.py \
 --rg AD.kunkle.sumstats.gz,AD.proxy.sumstats.gz \
 --ref-ld-chr eur_w_ld_chr/ \
 --w-ld-chr eur_w_ld_chr/ \
@@ -944,14 +945,14 @@ $JS/software/ldsc/ldsc.py \
 (echo -e "SNP\tA1\tA2\tbeta\tp\tN";
  zcat $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | sed '1d' | awk 'BEGIN{OFS="\t"}{N=166860; print $3,$4,$5,$12,$14,N}') \
  > AD.meta.sumstats_in.tsv
-$JS/software/ldsc/munge_sumstats.py \
+$SWDIR/ldsc/munge_sumstats.py \
 --sumstats AD.meta.sumstats_in.tsv \
 --N 166860 \
 --out AD.meta \
 --merge-alleles w_hm3.snplist
 
 # LD Score Regression - AD proxy
-$JS/software/ldsc/ldsc.py \
+$SWDIR/ldsc/ldsc.py \
 --h2 AD.meta.sumstats.gz \
 --ref-ld-chr eur_w_ld_chr/ \
 --w-ld-chr eur_w_ld_chr/ \
@@ -963,14 +964,14 @@ $JS/software/ldsc/ldsc.py \
  zcat $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_seconds_v5.meta.tsv.bgz | sed '1d' | awk 'BEGIN{OFS="\t"}{N=102934; print $3,$4,$5,$9,$11,N}') \
  > AD.proxy.exclude_seconds.sumstats_in.tsv
 
-$JS/software/ldsc/munge_sumstats.py \
+$SWDIR/ldsc/munge_sumstats.py \
 --sumstats AD.proxy.exclude_seconds.sumstats_in.tsv \
 --N 102934 \
 --out AD.proxy.exclude_seconds \
 --merge-alleles w_hm3.snplist
 
 # LD Score Regression - heritability
-$JS/software/ldsc/ldsc.py \
+$SWDIR/ldsc/ldsc.py \
 --h2 AD.proxy.exclude_seconds.sumstats.gz \
 --ref-ld-chr eur_w_ld_chr/ \
 --w-ld-chr eur_w_ld_chr/ \
@@ -990,14 +991,14 @@ $JS/software/ldsc/ldsc.py \
 
 source activate ldsc
 
-$JS/software/ldsc/munge_sumstats.py \
+$SWDIR/ldsc/munge_sumstats.py \
 --sumstats AD.kunkle.sumstats_in.excl_APOE.tsv \
 --N 63926 \
 --out AD.kunkle.excl_APOE \
 --merge-alleles w_hm3.snplist
 
 # LD Score Regression - heritability
-$JS/software/ldsc/ldsc.py \
+$SWDIR/ldsc/ldsc.py \
 --h2 AD.kunkle.excl_APOE.sumstats.gz \
 --ref-ld-chr eur_w_ld_chr/ \
 --w-ld-chr eur_w_ld_chr/ \
@@ -1013,21 +1014,21 @@ $JS/software/ldsc/ldsc.py \
  zcat $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | sed '1d' | awk '$1 != 19 || $2 < 42000000 || $2 > 48000000' | awk 'BEGIN{OFS="\t"}{N=102934; print $3,$4,$5,$9,$11,N}') \
  > AD.proxy.excl_APOE.sumstats_in.tsv
 
-$JS/software/ldsc/munge_sumstats.py \
+$SWDIR/ldsc/munge_sumstats.py \
 --sumstats AD.proxy.excl_APOE.sumstats_in.tsv \
 --N 102934 \
 --out AD.proxy.excl_APOE \
 --merge-alleles w_hm3.snplist
 
 # LD Score Regression - heritability
-$JS/software/ldsc/ldsc.py \
+$SWDIR/ldsc/ldsc.py \
 --h2 AD.proxy.excl_APOE.sumstats.gz \
 --ref-ld-chr eur_w_ld_chr/ \
 --w-ld-chr eur_w_ld_chr/ \
 --out AD.proxy.excl_APOE.h2
 
 # LD Score Regression - heritability for both AD proxy & Kunkle, and genetic correlation
-$JS/software/ldsc/ldsc.py \
+$SWDIR/ldsc/ldsc.py \
 --rg AD.kunkle.excl_APOE.sumstats.gz,AD.proxy.excl_APOE.sumstats.gz \
 --ref-ld-chr eur_w_ld_chr/ \
 --w-ld-chr eur_w_ld_chr/ \
@@ -1039,14 +1040,14 @@ $JS/software/ldsc/ldsc.py \
 (echo -e "SNP\tA1\tA2\tbeta\tp\tN";
  zcat $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | sed '1d' | awk '$1 != 19 || $2 < 42000000 || $2 > 48000000' | awk 'BEGIN{OFS="\t"}{N=63926; print $3,$4,$5,$12,$14,N}') \
  > AD.meta.excl_APOE.sumstats_in.tsv
-$JS/software/ldsc/munge_sumstats.py \
+$SWDIR/ldsc/munge_sumstats.py \
 --sumstats AD.meta.excl_APOE.sumstats_in.tsv \
 --N 166860 \
 --out AD.meta.excl_APOE \
 --merge-alleles w_hm3.snplist
 
 # LD Score Regression - AD proxy
-$JS/software/ldsc/ldsc.py \
+$SWDIR/ldsc/ldsc.py \
 --h2 AD.meta.excl_APOE.sumstats.gz \
 --ref-ld-chr eur_w_ld_chr/ \
 --w-ld-chr eur_w_ld_chr/ \
@@ -1063,19 +1064,19 @@ gzip GRACE_StageI.txt
 #(echo -e "CHR\tPos\tA1\tA2\tBeta\tSE\tP\tDirection\trsID"; zcat GRACEStageI_dbGAP.txt.gz | sed '1d') > GRACEStageI_dbGAP.sumstats_in.tsv
 
 # N = 4120 cases + 3289 controls = 7409
-$JS/software/ldsc/munge_sumstats.py \
+$SWDIR/ldsc/munge_sumstats.py \
 --sumstats GRACE_StageI.sumstats_in.tsv \
 --N 7409 \
 --out AD.Grace \
 --merge-alleles w_hm3.snplist
 
-$JS/software/ldsc/ldsc.py \
+$SWDIR/ldsc/ldsc.py \
 --h2 AD.Grace.sumstats.gz \
 --ref-ld-chr eur_w_ld_chr/ \
 --w-ld-chr eur_w_ld_chr/ \
 --out AD.Grace.h2
 
-$JS/software/ldsc/ldsc.py \
+$SWDIR/ldsc/ldsc.py \
 --rg AD.kunkle.sumstats.gz,AD.proxy.sumstats.gz,AD.Grace.sumstats.gz \
 --ref-ld-chr eur_w_ld_chr/ \
 --w-ld-chr eur_w_ld_chr/ \
@@ -1086,19 +1087,19 @@ $JS/software/ldsc/ldsc.py \
  zcat GRACE_StageI.txt.gz | sed '1d' | awk '$1 != 19 || $2 < 42000000 || $2 > 48000000') \
  > GRACE_StageI.sumstats_in.excl_APOE.tsv
 
-$JS/software/ldsc/munge_sumstats.py \
+$SWDIR/ldsc/munge_sumstats.py \
 --sumstats GRACE_StageI.sumstats_in.excl_APOE.tsv \
 --N 7409 \
 --out AD.Grace.excl_APOE \
 --merge-alleles w_hm3.snplist
 
-$JS/software/ldsc/ldsc.py \
+$SWDIR/ldsc/ldsc.py \
 --h2 AD.Grace.excl_APOE.sumstats.gz \
 --ref-ld-chr eur_w_ld_chr/ \
 --w-ld-chr eur_w_ld_chr/ \
 --out AD.Grace.excl_APOE.h2
 
-$JS/software/ldsc/ldsc.py \
+$SWDIR/ldsc/ldsc.py \
 --rg AD.kunkle.excl_APOE.sumstats.gz,AD.proxy.excl_APOE.sumstats.gz,AD.Grace.excl_APOE.sumstats.gz \
 --ref-ld-chr eur_w_ld_chr/ \
 --w-ld-chr eur_w_ld_chr/ \
@@ -1147,7 +1148,187 @@ wget https://storage.googleapis.com/finngen-public-data-r3/summary_stats/finngen
  > AD.IGAP1_GWAX_exclude_firsts_v5.meta.AD_indep_snps.txt
 
 
+###############################################################################
+# Meta-analysis of AD loci with other datasets
+cd $ROOT/replication
+
+# Tabix index the datasets so we can more easily run one chr at a time
+(zcat GRACE_StageI.txt.gz | head -n 1 | sed 's/ /\t/g';
+ zcat GRACE_StageI.txt.gz | sed '1d' | sed 's/ /\t/g' | sort -k1,1 -k2,2n) | bgzip > GRACE_StageI.txt.bgz
+tabix -h -s 1 -b 2 -e 2 -S 1 GRACE_StageI.txt.bgz
+
+# Prepare FinnGen GWAS for reading with Tabix
+zcat finngen_r3_G6_AD_WIDE.gz | bgzip > finngen_r3_G6_AD_WIDE.bgz
+tabix -s 1 -b 2 -e 2 -S 1 finngen_r3_G6_AD_WIDE.bgz
+
+# Run meta-analysis in R
+Rscript $SRC/do_replication_meta.R
+
+# Merge together per-chromosome results
+(zcat global_meta/chr1.global_meta.tsv.gz | head -n 1;
+ zcat global_meta/chr*.tsv.gz | grep -v "^pos_id" | sort -k2,2n -k3,3n) \
+ | bgzip > global_meta/global_meta.tsv.gz
+tabix -s 2 -b 3 -e 3 -S 1 global_meta/global_meta.tsv.gz
+
+zcat global_meta/global_meta.tsv.gz | head -n 1 > global_meta/global_meta.header.tsv
+
+# Extract significant SNPs in the global meta-analysis
+(zcat global_meta/global_meta.tsv.gz | head -n 1;
+ zcat global_meta/global_meta.tsv.gz | sed '1d' | awk '$10 < 5e-8') > global_meta/global_meta.p_lt_5e-8.tsv
+
+(zcat global_meta/global_meta.tsv.gz | head -n 1;
+ zcat global_meta/global_meta.tsv.gz | sed '1d' | awk '$15 < 5e-8') > global_meta/global_meta.kfu_p_lt_5e-8.tsv
+# Manually examine these files to identify independent genome-wide significant loci
+# This gives 4 additional loci: GRN, IGHG1, SHARPIN, SIGLEC11
+# SHARPIN: 8	145158607
+# IGHG1: 14	106195719
+# GRN: 17	42430244
+# SIGLEC11: 19	50451508
+
+# Extract just our 36 loci of interest for simpler downstream processing
+sed '1d' $ROOT/AD.loci.tsv | awk 'BEGIN{OFS="\t"}{print $1,$6-500000,$7+500000,$2,$15}' > AD.loci.1Mb_window.bed
+# Manually add the 4 loci above to AD.loci.1Mb_window.bed
+
+zcat global_meta/global_meta.tsv.gz | sed '1d' \
+  | awk 'BEGIN{OFS="\t"}{print $2,$3,$3+1,$1,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43}' \
+  | gzip > global_meta/global_meta.bed.gz
+
+
+
+bedtools intersect -b AD.loci.1Mb_window.bed -a global_meta/global_meta.bed.gz -wa -wb \
+    | gzip > global_meta/global_meta.assoc_loci.bed.gz
+(paste <(zcat global_meta/global_meta.tsv.gz | head -n 1) <(echo "locus");
+ zcat global_meta/global_meta.assoc_loci.bed.gz \
+ | awk 'BEGIN{OFS="\t"}{print $4,$1,$2,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$49}') \
+ | gzip > global_meta/global_meta.assoc_loci.tsv.gz
+
+
+
 Rscript $SRC/check_replication.R
+
+Rscript $SRC/compare_replication_meta.R
+
+
+###############################################################################
+# Apply conditional analysis and fine-mapping to the Kunkle dataset separately,
+# to check how robust our identified signals are.
+
+cd $ROOT
+
+submitJobs.py --MEM 9000 -j get_gcta_input.kunkle -q yesterday \
+  -c "python $SRC/get_gcta_input.kunkle.py"
+
+# Run GCTA-COJO on each chromosome. Use  P<1×10−5  p-value cutoff, since we can
+# later subset to only genome-wide significant loci.
+for filepath in gcta/input/*.bed; do
+  echo "$filepath"
+  filename=$(basename "$filepath") # filename like ukbb_sample.1.156156033_166156033.bed
+  filepath_no_ext="${filepath%.*}"
+  chr=`echo $filename | perl -ne '@Ar=split(/\./); print $Ar[1];'`
+  
+  submitJobs.py --MEM 2000 -q normal -j gcta.1e-5.$chr \
+    -c "gcta64 \
+  --bfile $filepath_no_ext \
+  --chr $chr \
+  --cojo-file gcta/input/AD.Kunkle.$chr.ma \
+  --cojo-slct \
+  --cojo-p 1e-5 \
+  --out gcta/output_1e-5/AD.Kunkle.$chr"
+done
+
+# For APOE and HLA, do a special run with a threshold of 5e-8 to avoid overfitting
+# the strong signal based on imperfect LD match
+mkdir gcta/output_5e-8
+chr_paths=( gcta/input/ukbb_sample.6.merged.bed gcta/input/ukbb_sample.19.merged.bed )
+for filepath in "${chr_paths[@]}"; do
+  echo "$filepath"
+  filename=$(basename "$filepath") # filename like ukbb_sample.1.156156033_166156033.bed
+  filepath_no_ext="${filepath%.*}"
+  chr=`echo $filename | perl -ne '@Ar=split(/\./); print $Ar[1];'`
+  
+  submitJobs.py --MEM 2000 -q normal -j gcta.5e-8.$chr \
+    -c "gcta64 \
+  --bfile $filepath_no_ext \
+  --chr $chr \
+  --cojo-file gcta/input/AD.Kunkle.$chr.ma \
+  --cojo-slct \
+  --cojo-p 5e-8 \
+  --out gcta/output_5e-8/AD.Kunkle.$chr"
+done
+
+grep "Successfully" FarmOut/gcta*.txt | wc -l
+grep -iP "Fail|ERROR|Abort|exit code" FarmOut/gcta*.txt | wc -l
+
+# This python script reads the output from GCTA (per chromosome gcta_out/AD.IGAP1_GWAX.[chr].jma.cojo files) and
+# creates list of independent loci. If distance between two SNPs is < 500kb, they will be collapsed into a single
+# locus. Remove SNPs with marginal P>5×10−8. Output file (in this example, "AD.IGAP1_GWAX.indep.hits") columns are
+# "Chr lead_SNP lead_pos SNPs pos start stop n_snps lead_freq lead_beta lead_p freq beta p".
+python $SRC/get_gcta_output_loci.kunkle.py --gcta_dir gcta/output_1e-5 --pthresh 5e-8 --out AD.Kunkle.gwsig_indep.hits
+# Use a distance of 620 kb so that APP-ADAMTS1 is considered 1 locus, as variants
+# are in partial LD
+python $SRC/get_gcta_output_loci.kunkle.py --gcta_dir gcta/output_1e-5 --pthresh 1e-5 --window 620000 --out AD.Kunkle.1e-5_indep.hits
+python $SRC/get_gcta_output_loci.kunkle.py --gcta_dir gcta/output_1e-5 --pthresh 1 --window 620000 --out AD.Kunkle.all_indep.hits
+python $SRC/get_gcta_output_loci.kunkle.py --gcta_dir gcta/output_5e-8 --pthresh 5e-8 --out AD.Kunkle.APOE_HLA.hits
+
+
+###############################
+# FINEMAP
+mkdir $ROOT/finemap_kunkle
+mkdir $ROOT/finemap_kunkle/input
+
+FINEMAP_DIR=$ROOT/finemap_kunkle
+
+(head -n 1 AD.loci.tsv; cat AD.loci.tsv | grep "HLA") > AD.loci.HLA.tsv
+cat AD.loci.tsv | grep -v "HLA" > AD.loci.exceptHLA.tsv
+
+(head -n 1 AD.loci.tsv; cat AD.loci.tsv | grep "TREM2") > AD.loci.TREM2.tsv
+
+# Prepare input files for running FINEMAP (and PAINTOR). This takes a couple of hours.
+# We only include SNPs with MAF > 0.002, since this is at the limit of our accuracy
+# for LD estimation (20 individuals in 10,000).
+submitJobs.py --MEM 10000 -n 5 -j get_finemapping_input.exceptHLA.kunkle -q yesterday \
+  -c "python $SRC/get_finemapping_input.kunkle.py --locus_file AD.loci.exceptHLA.tsv --gwas_file $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz --window 500000 --min_freq 0.002 --min_info 0.85 --hetp_threshold 0.001 --outdir $FINEMAP_DIR/input"
+submitJobs.py --MEM 19000 -n 5 -j get_finemapping_input.HLA.kunkle -q normal \
+  -c "python $SRC/get_finemapping_input.kunkle.py --locus_file AD.loci.HLA.tsv --gwas_file $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz --window 500000 --min_freq 0.002 --min_info 0.85 --hetp_threshold 0.001 --outdir $FINEMAP_DIR/input"
+submitJobs.py --MEM 10000 -n 5 -j get_finemapping_input.TREM2.kunkle -q normal \
+  -c "python $SRC/get_finemapping_input.kunkle.py --locus_file AD.loci.TREM2.tsv --gwas_file $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz --window 500000 --min_freq 0.0019 --min_info 0.85 --hetp_threshold 0.001 --outdir $FINEMAP_DIR/input"
+
+
+# Determine how many SNPs were excluded by different criteria. First paste together
+# all of the *.excluded_snps files and *.snplist files that were output.
+cat $FINEMAP_DIR/input/*.excluded_snps > $FINEMAP_DIR/input/all_excluded_snps.txt
+cat $FINEMAP_DIR/input/*.snplist > $FINEMAP_DIR/input/all.snplist.txt
+Rscript $SRC/count_snp_exclusions.R
+
+# The above step also extracts the meta-analysis SNPs at each associated locus,
+# and now we merge these into a single file for later use.
+(zcat $ROOT/summary_stats/AD.IGAP1_GWAX_exclude_firsts_v5.meta.tsv.bgz | head -n 1;
+ zcat $FINEMAP_DIR/input/*.IGAP1_GWAX.gwas.bgz | sort -k 1,1n -k2,2n) | bgzip > summary_stats/$GWAS_NAME.assoc_loci.gz
+tabix -s 1 -b 2 -e 2 -S 1 summary_stats/$GWAS_NAME.assoc_loci.gz
+
+# Run FINEMAP statistical fine-mapping
+submitJobs.py --MEM 2000 -j run_finemap_ncausal_1.kunkle -q yesterday \
+  -c "python $SRC/run_finemap.kunkle.py --input_loci AD.loci.tsv --input_dir $FINEMAP_DIR/input/ --output_dir $FINEMAP_DIR/out_ncausal_1  --ncausal 1"
+
+submitJobs.py --MEM 2500 -j run_finemap_ncausal_2.kunkle -q normal \
+  -c "python $SRC/run_finemap.kunkle.py --input_loci AD.loci.tsv --input_dir $FINEMAP_DIR/input/ --output_dir $FINEMAP_DIR/out_ncausal_2  --ncausal 2"
+
+submitJobs.py --MEM 2000 -j run_finemap_ncausal_3.kunkle -q normal \
+  -c "python $SRC/run_finemap.kunkle.py --input_loci AD.loci.TREM2.tsv --input_dir $FINEMAP_DIR/input/ --output_dir $FINEMAP_DIR/out_ncausal_3  --ncausal 3"
+
+# Merge finemap locus results into one file
+mkdir $FINEMAP_DIR/output
+(head -n 1 $FINEMAP_DIR/out_ncausal_1/1_161155392.Kunkle.1.snp; cat $FINEMAP_DIR/out_ncausal_1/*.Kunkle.1.snp | grep -v "^index") | tr ' ' '\t' > $FINEMAP_DIR/output/$GWAS_NAME.finemap.ncausal_1.snp
+(head -n 1 $FINEMAP_DIR/out_ncausal_2/1_161155392.Kunkle.2.snp; cat $FINEMAP_DIR/out_ncausal_2/*.Kunkle.2.snp | grep -v "^index") | tr ' ' '\t' > $FINEMAP_DIR/output/$GWAS_NAME.finemap.ncausal_2.snp
+(head -n 1 $FINEMAP_DIR/out_ncausal_3/6_40942196.Kunkle.3.snp; cat $FINEMAP_DIR/out_ncausal_3/*.Kunkle.3.snp | grep -v "^index") | tr ' ' '\t' > $FINEMAP_DIR/output/$GWAS_NAME.finemap.ncausal_3.snp
+
+for filepath in $FINEMAP_DIR/input/*.Kunkle.*.in; do
+  echo "$filepath"
+  mv $filepath $filepath.tmp
+  cat $filepath.tmp | sed '1,2d' > $filepath
+done
+
+Rscript $SRC/compare_meta_kunkle_finemap.R
 
 
 ################################################################################

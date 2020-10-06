@@ -24,7 +24,7 @@ outdir = args.output_dir
 if outdir[len(outdir)-1] != "/":
 	outdir = outdir + "/"
 
-n_samples = str(21982+41944+(52791+3046)/4+(355900)/4)
+n_samples = str(21982+41944)
 
 for i in args.input_loci:
     if i.split()[0] == "Chr":
@@ -39,12 +39,12 @@ for i in args.input_loci:
     if args.ncausal > 0:
     	ncausal = args.ncausal
     ncausal = str(ncausal)
-    write_in = open(indir + locus + ".IGAP1_GWAX." + ncausal + ".in",'wa')
-    print >>write_in, "z;ld;snp;config;cred;log;n_samples"
-    print >>write_in, indir + locus + ".IGAP1_GWAX.z;" + indir + locus + ".IGAP1_GWAX.ld;" + outdir + locus + ".IGAP1_GWAX." + ncausal + ".snp;" + outdir + locus + ".IGAP1_GWAX." + ncausal + ".config;" + outdir + locus + ".IGAP1_GWAX." + ncausal + ".cred;" + outdir + locus + ".IGAP1_GWAX." + ncausal + ".log;" + n_samples
+    write_in = open(indir + locus + ".Kunkle." + ncausal + ".in", 'a')
+    print("z;ld;snp;config;cred;log;n_samples", file=write_in)
+    print(indir + locus + ".Kunkle.z;" + indir + locus + ".Kunkle.ld;" + outdir + locus + ".Kunkle." + ncausal + ".snp;" + outdir + locus + ".Kunkle." + ncausal + ".config;" + outdir + locus + ".Kunkle." + ncausal + ".cred;" + outdir + locus + ".Kunkle." + ncausal + ".log;" + n_samples, file=write_in)
     write_in.close()
     
-    cmd = "finemap --{} --in-files {}{}.IGAP1_GWAX.{}.in --corr-config 0.9 --log --n-causal-snps {}".format(args.method, indir, locus, ncausal, ncausal)
+    cmd = "finemap --{} --in-files {}{}.Kunkle.{}.in --corr-config 0.9 --log --n-causal-snps {}".format(args.method, indir, locus, ncausal, ncausal)
     sys.stderr.write(cmd + "\n")
     os.system(cmd)
     #break
